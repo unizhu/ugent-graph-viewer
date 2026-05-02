@@ -1,0 +1,27 @@
+{
+  "name": "ugent-graph-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-types": "0.24.8",
+    "sigma": "3.0.3",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.2.4",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.0.1",
+    "typescript": "6.0.3",
+    "vite": "8.0.10"
+  }
+}
