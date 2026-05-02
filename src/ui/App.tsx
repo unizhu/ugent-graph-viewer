@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Graph from "graphology";
 import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewport } from "../types";
 import { loadGraph, parseViewport } from "../graph/loader";
-import { applyFilters } from "../graph/filters";
+import { countVisible } from "../graph/filters";
 import { runLayout } from "../graph/layout";
 import { assignCommunityColors } from "../graph/communities";
 import { FilterPanel } from "./FilterPanel";
@@ -10,6 +10,7 @@ import { SearchBar } from "./SearchBar";
 import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
 import { SigmaCanvas } from "../canvas/SigmaCanvas";
+import { useDebounce } from "./useDebounce";
 
 let storedViewport: ExportViewport | null = null;
 
@@ -24,6 +25,7 @@ interface Manifest {
 export function App() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [layoutRunning, setLayoutRunning] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<string>("");
   const [codebases, setCodebases] = useState<CodebaseSummary[]>([]);
   const [stats, setStats] = useState<ExportStats | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -36,6 +38,14 @@ export function App() {
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
   const sigmaRefreshRef = useRef<(() => void) | null>(null);
+  const layoutCleanupRef = useRef<(() => void) | null>(null);
+
+  // Debounce search query to avoid excessive reducer recomputation.
+  const debouncedSearchQuery = useDebounce(filters.searchQuery, 150);
+  const debouncedFilters = useMemo(() => ({
+    ...filters,
+    searchQuery: debouncedSearchQuery,
+  }), [filters, debouncedSearchQuery]);
 
   useEffect(() => {
     fetch("/data/manifest.json")
@@ -49,16 +59,44 @@ export function App() {
   }, []);
 
   const loadViewport = useCallback((viewport: ExportViewport) => {
+    // Kill any previous layout worker.
+    layoutCleanupRef.current?.();
+    layoutCleanupRef.current = null;
+
+    setLoadingPhase("Parsing graph data...");
     storedViewport = viewport;
-    const g = loadGraph(viewport);
-    assignCommunityColors(g);
-    runLayout(g, 100);
-    graphRef.current = g;
-    setGraph(g);
-    setCodebases(viewport.codebases);
-    setStats(viewport.stats);
-    setSelectedNode(null);
-    setLayoutRunning(false);
+
+    // Use setTimeout to let the loading phase render before heavy work.
+    setTimeout(() => {
+      setLoadingPhase("Building graph structure...");
+      const g = loadGraph(viewport);
+      assignCommunityColors(g);
+
+      setCodebases(viewport.codebases);
+      setStats(viewport.stats);
+      setSelectedNode(null);
+      graphRef.current = g;
+
+      // Reset filters to show everything.
+      setFilters({
+        codebaseId: null,
+        nodeKinds: new Set(),
+        edgeRelations: new Set(),
+        searchQuery: "",
+      });
+
+      // Set graph AFTER x,y positions are initialized (done in loadGraph).
+      // This ensures Sigma sees valid positions on first render.
+      setGraph(g);
+
+      setLoadingPhase("Computing layout...");
+      const { cleanup } = runLayout(g, 100, () => {
+        setLoadingPhase("");
+        setLayoutRunning(false);
+        sigmaRefreshRef.current?.();
+      });
+      layoutCleanupRef.current = cleanup;
+    }, 0);
   }, []);
 
   const handleFileLoad = useCallback(
@@ -90,19 +128,12 @@ export function App() {
     [loadViewport],
   );
 
-  useEffect(() => {
-    const g = graphRef.current;
-    if (!g) return;
-    applyFilters(g, filters);
-    sigmaRefreshRef.current?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
-
+  // Compute visible counts for the stats panel (read-only, no graph mutation).
   const visibility = useMemo(() => {
     if (!graphRef.current) return { visibleNodes: stats?.total_nodes ?? 0, visibleEdges: stats?.total_edges ?? 0 };
-    return applyFilters(graphRef.current, filters);
+    return countVisible(graphRef.current, debouncedFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [debouncedFilters, graph]);
 
   if (!stats) {
     return (
@@ -123,11 +154,11 @@ export function App() {
           </div>
         )}
         <label className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-medium cursor-pointer transition-colors">
-          {layoutRunning ? "Loading..." : "Load Graph JSON"}
+          {layoutRunning ? (loadingPhase || "Loading...") : "Load Graph JSON"}
           <input type="file" accept=".json" onChange={handleFileLoad} disabled={layoutRunning} className="hidden" />
         </label>
         <p className="text-xs text-gray-600 mt-2">
-          Export: <code className="text-gray-500">ugent-context-engine graph export &lt;codebase_id&gt;</code>
+          Export: <code className="text-gray-500">ugent-context-engine graph export &lt;codebase_id&gt; --no-blocks --no-contains</code>
         </p>
       </div>
     );
@@ -163,13 +194,21 @@ export function App() {
             </div>
           )}
         </div>
-        {layoutRunning && <div className="px-4 pb-4 text-xs text-gray-500 animate-pulse">Computing layout...</div>}
+        {layoutRunning && <div className="px-4 pb-4 text-xs text-blue-400 animate-pulse">{loadingPhase || "Computing layout..."}</div>}
       </div>
       <div className="flex-1 relative">
         {graph ? (
-          <SigmaCanvas graph={graph} onNodeClick={(nodeId) => setSelectedNode(nodeId)} onRefreshReady={handleSigmaRefreshReady} />
+          <SigmaCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} onRefreshReady={handleSigmaRefreshReady} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm">Loading graph...</div>
+        )}
+        {layoutRunning && (
+          <div className="absolute inset-0 bg-gray-950/60 flex items-center justify-center z-10">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-gray-300">{loadingPhase || "Computing layout..."}</p>
+            </div>
+          </div>
         )}
       </div>
     </div>

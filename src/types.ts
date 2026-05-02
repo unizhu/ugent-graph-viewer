@@ -8,7 +8,6 @@ export interface GraphNode {
   codebase_id: string;
   file_path: string;
   line_range: [number, number];
-  file_sha: string;
   community_id: number | null;
 }
 
@@ -30,7 +29,6 @@ export interface GraphEdge {
   relation: EdgeRelation;
   confidence: number;
   source_type: EdgeSource;
-  codebase_id: string;
 }
 
 export type EdgeRelation =

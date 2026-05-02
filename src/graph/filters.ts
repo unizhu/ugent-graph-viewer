@@ -2,70 +2,60 @@ import Graph from "graphology";
 import type { FilterState, NodeKind, EdgeRelation } from "../types";
 
 /**
- * Apply filter state to a Graphology graph by tagging nodes/edges as hidden.
- * Returns the number of visible nodes and edges.
+ * Compute visibility counts from filter state WITHOUT mutating the graph.
+ * The actual visual filtering is handled by nodeReducer/edgeReducer in Sigma.
+ *
+ * This function only counts visible nodes/edges for the stats panel.
  */
-export function applyFilters(
+export function countVisible(
   graph: Graph,
   filters: FilterState,
 ): { visibleNodes: number; visibleEdges: number } {
-  let visibleNodes = 0;
-  let visibleEdges = 0;
-
   const hasKindFilter = filters.nodeKinds.size > 0;
   const hasRelationFilter = filters.edgeRelations.size > 0;
+  const hasSearch = !!filters.searchQuery;
 
-  // Phase 1: Mark nodes visible/hidden.
+  // Fast path: no filters → everything visible.
+  if (!filters.codebaseId && !hasKindFilter && !hasSearch && !hasRelationFilter) {
+    return { visibleNodes: graph.order, visibleEdges: graph.size };
+  }
+
   const visibleNodeIds = new Set<string>();
+
   graph.forEachNode((node, attrs) => {
     let visible = true;
 
     if (filters.codebaseId && attrs.codebaseId !== filters.codebaseId) {
       visible = false;
     }
-
     if (visible && hasKindFilter) {
       if (!filters.nodeKinds.has(attrs.kind as NodeKind)) {
         visible = false;
       }
     }
-
-    if (visible && filters.searchQuery) {
+    if (visible && hasSearch) {
       const q = filters.searchQuery.toLowerCase();
       if (
-        !attrs.label.toLowerCase().includes(q) &&
-        !attrs.filePath.toLowerCase().includes(q)
+        !(attrs.label as string).toLowerCase().includes(q) &&
+        !(attrs.filePath as string).toLowerCase().includes(q)
       ) {
         visible = false;
       }
     }
 
-    graph.setNodeAttribute(node, "hidden", !visible);
     if (visible) {
       visibleNodeIds.add(node);
-      visibleNodes++;
     }
   });
 
-  // Phase 2: Mark edges visible/hidden.
-  graph.forEachEdge((edge, attrs, source, target) => {
-    let visible = true;
-
-    if (!visibleNodeIds.has(source) || !visibleNodeIds.has(target)) {
-      visible = false;
+  let visibleEdges = 0;
+  graph.forEachEdge((_edge, attrs, source, target) => {
+    if (!visibleNodeIds.has(source) || !visibleNodeIds.has(target)) return;
+    if (hasRelationFilter) {
+      if (!filters.edgeRelations.has(attrs.relation as EdgeRelation)) return;
     }
-
-    if (visible && hasRelationFilter) {
-      if (!filters.edgeRelations.has(attrs.relation as EdgeRelation)) {
-        visible = false;
-      }
-    }
-
-    graph.setEdgeAttribute(edge, "hidden", !visible);
-    if (visible) {
-      visibleEdges++;
-    }
+    visibleEdges++;
   });
 
-  return { visibleNodes, visibleEdges };
+  return { visibleNodes: visibleNodeIds.size, visibleEdges };
 }

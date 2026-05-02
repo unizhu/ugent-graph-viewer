@@ -22,6 +22,10 @@ export function loadGraph(viewport: ExportViewport): Graph {
       lineRange: node.line_range,
       communityId: node.community_id,
       degree: 0,
+      // Initialize random positions so Sigma can render immediately.
+      // Layout will overwrite these with computed positions.
+      x: Math.random() * 1000,
+      y: Math.random() * 1000,
     });
   }
 
