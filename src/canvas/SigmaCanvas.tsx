@@ -1,13 +1,19 @@
+import { useEffect } from "react";
 import Graph from "graphology";
 import { useSigma } from "./useSigma";
 
 interface SigmaCanvasProps {
   graph: Graph;
   onNodeClick: (nodeId: string) => void;
+  onRefreshReady: (refresh: () => void) => void;
 }
 
-export function SigmaCanvas({ graph, onNodeClick }: SigmaCanvasProps) {
-  const containerRef = useSigma(graph, onNodeClick);
+export function SigmaCanvas({ graph, onNodeClick, onRefreshReady }: SigmaCanvasProps) {
+  const [containerRef, refresh] = useSigma(graph, onNodeClick);
+
+  useEffect(() => {
+    onRefreshReady(refresh);
+  }, [refresh, onRefreshReady]);
 
   return (
     <div

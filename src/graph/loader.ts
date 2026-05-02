@@ -4,9 +4,12 @@ import type { ExportViewport } from "../types";
 /**
  * Load an ExportViewport JSON into a Graphology graph instance.
  * Sets node/edge attributes for rendering (color, size, label).
+ *
+ * Uses multi-graph mode so parallel edges with different relations
+ * between the same source/target pair are all retained.
  */
 export function loadGraph(viewport: ExportViewport): Graph {
-  const graph = new Graph({ multi: false, type: "directed" });
+  const graph = new Graph({ multi: true, type: "directed" });
 
   const nodeIds = new Set(viewport.nodes.map((n) => n.id));
 
@@ -25,7 +28,9 @@ export function loadGraph(viewport: ExportViewport): Graph {
   for (const edge of viewport.edges) {
     if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
       const edgeKey = `${edge.source}|${edge.target}|${edge.relation}`;
-      if (!graph.hasDirectedEdge(edge.source, edge.target)) {
+      // With multi:true, parallel edges with same source/target are allowed,
+      // and the unique edgeKey prevents exact duplicates.
+      if (!graph.hasEdge(edgeKey)) {
         graph.addDirectedEdgeWithKey(edgeKey, edge.source, edge.target, {
           relation: edge.relation,
           confidence: edge.confidence,

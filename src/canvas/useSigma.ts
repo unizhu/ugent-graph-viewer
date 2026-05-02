@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import Sigma from "sigma";
 import Graph from "graphology";
 import { createNodeReducer } from "./nodeReducers";
@@ -9,14 +9,20 @@ type AnyGraph = Graph;
 
 /**
  * Hook to manage a Sigma.js renderer instance bound to a container div.
+ * Returns [containerRef, refresh] — call refresh() after mutating graph
+ * attributes to force Sigma to re-render.
  */
 export function useSigma(
   graph: AnyGraph,
   onNodeClick: (nodeId: string) => void,
-) {
+): [ref: React.RefObject<HTMLDivElement | null>, refresh: () => void] {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sigmaRef = useRef<Sigma<any, any, any> | null>(null);
+
+  const refresh = useCallback(() => {
+    sigmaRef.current?.refresh();
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -69,5 +75,5 @@ export function useSigma(
     };
   }, [graph, onNodeClick]);
 
-  return containerRef;
+  return [containerRef, refresh];
 }

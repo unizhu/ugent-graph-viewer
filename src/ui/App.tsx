@@ -11,7 +11,7 @@ import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
 import { SigmaCanvas } from "../canvas/SigmaCanvas";
 
-// Store the raw viewport data temporarily on window for NodeDetail access.
+// Store the raw viewport data for NodeDetail access.
 let storedViewport: ExportViewport | null = null;
 
 function getStoredNodes(): GraphNode[] {
@@ -31,15 +31,24 @@ export function App() {
     searchQuery: "",
   });
   const graphRef = useRef<Graph | null>(null);
+  const sigmaRefreshRef = useRef<(() => void) | null>(null);
+
+  const handleSigmaRefreshReady = useCallback((refresh: () => void) => {
+    sigmaRefreshRef.current = refresh;
+  }, []);
 
   const handleFileLoad = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
+      setLayoutRunning(true);
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result;
-        if (typeof text !== "string") return;
+        if (typeof text !== "string") {
+          setLayoutRunning(false);
+          return;
+        }
         try {
           const viewport = parseViewport(text);
           storedViewport = viewport;
@@ -53,29 +62,34 @@ export function App() {
           setSelectedNode(null);
           setLayoutRunning(false);
         } catch {
+          setLayoutRunning(false);
           alert("Failed to parse JSON. Ensure it is a valid ExportViewport.");
         }
       };
-      reader.readAsText(file);
+      reader.onerror = () => {
+        setLayoutRunning(false);
+        alert("Failed to read file.");
+      };
+      reader.readAsText(file, "UTF-8");
     },
     [],
   );
 
-  // Re-apply filters when filter state or graph changes.
+  // Apply filters and trigger Sigma refresh when filters change.
   useEffect(() => {
-    if (!graphRef.current) return;
-    applyFilters(graphRef.current, filters);
-    // Force Sigma to re-render.
-    setGraph(graphRef.current);
-    // Trigger a tentative re-render by updating state.
+    const g = graphRef.current;
+    if (!g) return;
+    applyFilters(g, filters);
+    sigmaRefreshRef.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
-  // Derive visible counts.
+  // Derive visible counts from applying filters to graph.
   const visibility = useMemo(() => {
-    if (!graph) return { visibleNodes: stats?.total_nodes ?? 0, visibleEdges: stats?.total_edges ?? 0 };
-    return applyFilters(graph, filters);
+    if (!graphRef.current) return { visibleNodes: stats?.total_nodes ?? 0, visibleEdges: stats?.total_edges ?? 0 };
+    return applyFilters(graphRef.current, filters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, graph]);
+  }, [filters]);
 
   if (!stats) {
     return (
@@ -86,11 +100,12 @@ export function App() {
         </p>
         <label className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg
                           text-white font-medium cursor-pointer transition-colors">
-          Load Graph JSON
+          {layoutRunning ? "Loading..." : "Load Graph JSON"}
           <input
             type="file"
             accept=".json"
             onChange={handleFileLoad}
+            disabled={layoutRunning}
             className="hidden"
           />
         </label>
@@ -142,12 +157,13 @@ export function App() {
               type="file"
               accept=".json"
               onChange={handleFileLoad}
+              disabled={layoutRunning}
               className="hidden"
             />
           </label>
         </div>
         {layoutRunning && (
-          <div className="px-4 pb-4 text-xs text-gray-500">
+          <div className="px-4 pb-4 text-xs text-gray-500 animate-pulse">
             Computing layout...
           </div>
         )}
@@ -159,6 +175,7 @@ export function App() {
           <SigmaCanvas
             graph={graph}
             onNodeClick={(nodeId) => setSelectedNode(nodeId)}
+            onRefreshReady={handleSigmaRefreshReady}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm">
