@@ -162,6 +162,30 @@ export function FilterPanel({
           })}
         </div>
       </div>
+
+      {/* Isolated nodes toggle */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-400">
+          Show Isolated Nodes
+        </span>
+        <button
+          onClick={() =>
+            onFiltersChange({
+              ...filters,
+              showIsolated: !filters.showIsolated,
+            })
+          }
+          className={`w-9 h-5 rounded-full transition-colors relative ${
+            filters.showIsolated ? "bg-blue-500" : "bg-gray-700"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              filters.showIsolated ? "left-[18px]" : "left-0.5"
+            }`}
+          />
+        </button>
+      </div>
     </div>
   );
 }

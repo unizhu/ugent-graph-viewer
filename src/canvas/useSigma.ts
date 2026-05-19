@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import Sigma from "sigma";
 import Graph from "graphology";
-import type { FilterState } from "../types";
+import type { FilterState, ZoomLevel } from "../types";
+import { classifyZoom } from "../types";
 import { createNodeReducer } from "./nodeReducers";
 import { createEdgeReducer } from "./edgeReducers";
 
@@ -36,21 +37,25 @@ function ensurePositions(graph: AnyGraph): void {
 
 /**
  * Hook to manage a Sigma.js renderer instance bound to a container div.
- * Returns [containerRef, refresh] — call refresh() after mutating graph
- * attributes to force Sigma to re-render.
+ * Returns [containerRef, refresh, zoomLevel] -- call refresh() after
+ * mutating graph attributes to force Sigma to re-render.
  *
- * When filters change, the nodeReducer/edgeReducer are updated via
- * sigma.setSetting() which triggers an efficient re-render without
- * modifying the graphology instance.
+ * Tracks camera zoom level and uses it for level-of-detail rendering
+ * in node/edge reducers.
  */
 export function useSigma(
   graph: AnyGraph,
   filters: FilterState,
   onNodeClick: (nodeId: string) => void,
-): [ref: React.RefObject<HTMLDivElement | null>, refresh: () => void] {
+): [
+  ref: React.RefObject<HTMLDivElement | null>,
+  refresh: () => void,
+  zoomLevel: ZoomLevel,
+] {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sigmaRef = useRef<Sigma<any, any, any> | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("mid");
 
   const refresh = useCallback(() => {
     sigmaRef.current?.refresh();
@@ -70,16 +75,16 @@ export function useSigma(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const renderer = new Sigma<any, any, any>(graph, containerRef.current, {
-      nodeReducer: createNodeReducer(filters),
-      edgeReducer: createEdgeReducer(filters, graph),
+      nodeReducer: createNodeReducer(filters, zoomLevel),
+      edgeReducer: createEdgeReducer(filters, graph, zoomLevel),
       defaultEdgeColor: "#374151",
       defaultNodeColor: "#6b7280",
       labelColor: { color: "#e5e7eb" },
       labelFont: "12px Inter, system-ui, sans-serif",
       labelSize: 12,
-      labelRenderedSizeThreshold: 12,
+      labelRenderedSizeThreshold: 8,
       renderEdgeLabels: false,
-      minCameraRatio: 0.1,
+      minCameraRatio: 0.05,
       maxCameraRatio: 10,
     });
 
@@ -115,28 +120,41 @@ export function useSigma(
       }
     });
 
+    // Track camera zoom level changes for LOD rendering.
+    const camera = renderer.getCamera();
+    const handleCameraUpdate = () => {
+      const ratio = camera.ratio;
+      const newZoom = classifyZoom(ratio);
+      setZoomLevel((prev) => {
+        if (prev !== newZoom) return newZoom;
+        return prev;
+      });
+    };
+    camera.on("updated", handleCameraUpdate);
+
     sigmaRef.current = renderer;
 
     return () => {
+      camera.removeListener("updated", handleCameraUpdate);
       renderer.kill();
       sigmaRef.current = null;
     };
     // Only re-create Sigma when the graph instance changes.
-    // Filters are handled by the separate effect below.
+    // Filters and zoom are handled by the separate effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph]);
 
-  // Update reducers when filters change (no graph mutation, no Sigma re-creation).
+  // Update reducers when filters or zoom level change.
   useEffect(() => {
     const sigma = sigmaRef.current;
     if (!sigma) return;
 
-    sigma.setSetting("nodeReducer", createNodeReducer(filters));
-    sigma.setSetting("edgeReducer", createEdgeReducer(filters, graph));
+    sigma.setSetting("nodeReducer", createNodeReducer(filters, zoomLevel));
+    sigma.setSetting("edgeReducer", createEdgeReducer(filters, graph, zoomLevel));
     // skipIndexation: true because filter changes only affect visual attributes
     // (color, size, label), not spatial layout (x, y).
     sigma.refresh({ skipIndexation: true });
-  }, [filters, graph]);
+  }, [filters, graph, zoomLevel]);
 
-  return [containerRef, refresh];
+  return [containerRef, refresh, zoomLevel];
 }

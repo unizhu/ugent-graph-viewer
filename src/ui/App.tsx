@@ -1,11 +1,13 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Graph from "graphology";
-import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewport } from "../types";
+import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewport, CommunityInfo } from "../types";
 import { loadGraph, parseViewport } from "../graph/loader";
 import { countVisible } from "../graph/filters";
 import { runLayout } from "../graph/layout";
 import { assignCommunityColors } from "../graph/communities";
+import { detectCommunities, buildCommunityInfo } from "../graph/clustering";
 import { FilterPanel } from "./FilterPanel";
+import { CommunityPanel } from "./CommunityPanel";
 import { SearchBar } from "./SearchBar";
 import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
@@ -29,11 +31,14 @@ export function App() {
   const [codebases, setCodebases] = useState<CodebaseSummary[]>([]);
   const [stats, setStats] = useState<ExportStats | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [communities, setCommunities] = useState<CommunityInfo[]>([]);
   const [filters, setFilters] = useState<FilterState>({
     codebaseId: null,
     nodeKinds: new Set(),
     edgeRelations: new Set(),
     searchQuery: "",
+    showIsolated: false,
+    selectedCommunities: new Set(),
   });
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
@@ -69,8 +74,15 @@ export function App() {
     // Use setTimeout to let the loading phase render before heavy work.
     setTimeout(() => {
       setLoadingPhase("Building graph structure...");
-      const g = loadGraph(viewport);
-      assignCommunityColors(g);
+      // By default, prune isolated nodes (showIsolated=false).
+      const g = loadGraph(viewport, true);
+
+      // Detect communities client-side if not provided by the server.
+      setLoadingPhase("Detecting communities...");
+      detectCommunities(g);
+
+      // Assign community colors based on detected communityIds.
+      const communityColors = assignCommunityColors(g);
 
       setCodebases(viewport.codebases);
       setStats(viewport.stats);
@@ -83,6 +95,8 @@ export function App() {
         nodeKinds: new Set(),
         edgeRelations: new Set(),
         searchQuery: "",
+        showIsolated: false,
+        selectedCommunities: new Set(),
       });
 
       // Set graph AFTER x,y positions are initialized (done in loadGraph).
@@ -90,9 +104,14 @@ export function App() {
       setGraph(g);
 
       setLoadingPhase("Computing layout...");
-      const { cleanup } = runLayout(g, 100, () => {
+      const { cleanup } = runLayout(g, 300, () => {
         setLoadingPhase("");
         setLayoutRunning(false);
+
+        // Build community info AFTER layout is done so centroids are meaningful.
+        const infos = buildCommunityInfo(g, communityColors);
+        setCommunities(infos);
+
         sigmaRefreshRef.current?.();
       });
       layoutCleanupRef.current = cleanup;
@@ -127,6 +146,50 @@ export function App() {
     },
     [loadViewport],
   );
+
+  const handleToggleCommunity = useCallback((id: number) => {
+    setFilters((prev) => {
+      const next = new Set(prev.selectedCommunities);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return { ...prev, selectedCommunities: next };
+    });
+  }, []);
+
+  const handleClearCommunitySelection = useCallback(() => {
+    setFilters((prev) => ({ ...prev, selectedCommunities: new Set() }));
+  }, []);
+
+  // When showIsolated changes, we need to reload the graph with/without isolated nodes.
+  const prevShowIsolated = useRef(false);
+  useEffect(() => {
+    if (!storedViewport || !graph) return;
+    if (filters.showIsolated === prevShowIsolated.current) return;
+    prevShowIsolated.current = filters.showIsolated;
+
+    // Reload graph with new pruneIsolated setting.
+    const viewport = storedViewport;
+    const g = loadGraph(viewport, !filters.showIsolated);
+    detectCommunities(g);
+    const communityColors = assignCommunityColors(g);
+    graphRef.current = g;
+    setGraph(g);
+    setLayoutRunning(true);
+    setLoadingPhase("Re-computing layout...");
+
+    const { cleanup } = runLayout(g, 200, () => {
+      setLoadingPhase("");
+      setLayoutRunning(false);
+      const infos = buildCommunityInfo(g, communityColors);
+      setCommunities(infos);
+      sigmaRefreshRef.current?.();
+    });
+    layoutCleanupRef.current = cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.showIsolated]);
 
   // Compute visible counts for the stats panel (read-only, no graph mutation).
   const visibility = useMemo(() => {
@@ -166,10 +229,18 @@ export function App() {
 
   return (
     <div className="flex h-screen w-screen bg-gray-950">
-      <div className="flex flex-col w-72 shrink-0">
+      <div className="flex flex-col w-72 shrink-0 overflow-y-auto">
         <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
         <div className="px-4 py-2">
           <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
+        </div>
+        <div className="px-4 py-2">
+          <CommunityPanel
+            communities={communities}
+            selectedCommunities={filters.selectedCommunities}
+            onToggleCommunity={handleToggleCommunity}
+            onClearSelection={handleClearCommunitySelection}
+          />
         </div>
         <div className="px-4">
           <StatsPanel stats={stats} visibleNodes={visibility.visibleNodes} visibleEdges={visibility.visibleEdges} />

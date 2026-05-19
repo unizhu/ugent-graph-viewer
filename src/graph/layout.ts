@@ -1,20 +1,22 @@
 import Graph from "graphology";
 import FA2LayoutSupervisor from "graphology-layout-forceatlas2/worker";
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import noverlap from "graphology-layout-noverlap";
 
 const SMALL_GRAPH_THRESHOLD = 1000;
-const LAYOUT_TIMEOUT_MS = 4000;
+const LAYOUT_TIMEOUT_MS = 8000;
 
 /**
- * Run ForceAtlas2 layout. Uses a Web Worker for graphs > 1000 nodes
- * to avoid blocking the main thread.
+ * Run ForceAtlas2 layout with community-aware settings, followed by
+ * a Noverlap pass to prevent node overlap.
  *
- * For large graphs, returns a cleanup function the caller must invoke
- * to stop the worker when done.
+ * Uses linLogMode for tighter clusters, higher gravity to pull
+ * disconnected components inward, and stronger scaling to separate
+ * communities visually.
  */
 export function runLayout(
   graph: Graph,
-  iterations: number = 100,
+  iterations: number = 300,
   onDone?: () => void,
 ): { cleanup: () => void } {
   // Initialize random positions for all nodes.
@@ -27,17 +29,22 @@ export function runLayout(
     }
   });
 
+  const isLarge = graph.order > 1000;
+
   const settings = {
-    linLogMode: false,
+    linLogMode: true,
     adjustSizes: true,
-    gravity: 1,
-    slowDown: 1,
-    barnesHutOptimize: graph.order > 1000,
+    gravity: isLarge ? 5 : 3,
+    scalingRatio: isLarge ? 10 : 5,
+    strongGravityMode: true,
+    barnesHutOptimize: isLarge,
+    slowDown: isLarge ? 2 : 1,
   };
 
   // Small graphs: synchronous (fast enough, no worker overhead).
   if (graph.order < SMALL_GRAPH_THRESHOLD) {
     forceAtlas2.assign(graph, { iterations, settings });
+    applyNoverlap(graph);
     onDone?.();
     return { cleanup() {} };
   }
@@ -47,6 +54,7 @@ export function runLayout(
 
   const timer = setTimeout(() => {
     supervisor.stop();
+    applyNoverlap(graph);
     onDone?.();
   }, LAYOUT_TIMEOUT_MS);
 
@@ -56,4 +64,21 @@ export function runLayout(
       supervisor.kill();
     },
   };
+}
+
+/**
+ * Post-layout overlap prevention. Pushes overlapping nodes apart
+ * so labels remain readable.
+ */
+function applyNoverlap(graph: Graph): void {
+  if (graph.order === 0) return;
+
+  noverlap.assign(graph, {
+    maxIterations: 200,
+    settings: {
+      margin: 2,
+      ratio: 1.2,
+      gridSize: graph.order > 2000 ? 20 : 10,
+    },
+  });
 }

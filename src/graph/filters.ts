@@ -13,10 +13,17 @@ export function countVisible(
 ): { visibleNodes: number; visibleEdges: number } {
   const hasKindFilter = filters.nodeKinds.size > 0;
   const hasRelationFilter = filters.edgeRelations.size > 0;
+  const hasCommunityFilter = filters.selectedCommunities.size > 0;
   const hasSearch = !!filters.searchQuery;
 
-  // Fast path: no filters → everything visible.
-  if (!filters.codebaseId && !hasKindFilter && !hasSearch && !hasRelationFilter) {
+  // Fast path: no filters -> everything visible.
+  if (
+    !filters.codebaseId &&
+    !hasKindFilter &&
+    !hasSearch &&
+    !hasRelationFilter &&
+    !hasCommunityFilter
+  ) {
     return { visibleNodes: graph.order, visibleEdges: graph.size };
   }
 
@@ -33,11 +40,17 @@ export function countVisible(
         visible = false;
       }
     }
+    if (visible && hasCommunityFilter) {
+      const cid = attrs.communityId as number | null;
+      if (cid != null && !filters.selectedCommunities.has(cid)) {
+        visible = false;
+      }
+    }
     if (visible && hasSearch) {
       const q = filters.searchQuery.toLowerCase();
       if (
         !(attrs.label as string).toLowerCase().includes(q) &&
-        !(attrs.filePath as string).toLowerCase().includes(q)
+        !((attrs.filePath as string) || "").toLowerCase().includes(q)
       ) {
         visible = false;
       }

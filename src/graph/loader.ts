@@ -7,13 +7,35 @@ import type { ExportViewport } from "../types";
  *
  * Uses multi-graph mode so parallel edges with different relations
  * between the same source/target pair are all retained.
+ *
+ * When `pruneIsolated` is true (default), nodes with zero edges
+ * are excluded to reduce visual noise.
  */
-export function loadGraph(viewport: ExportViewport): Graph {
+export function loadGraph(
+  viewport: ExportViewport,
+  pruneIsolated: boolean = true,
+): Graph {
   const graph = new Graph({ multi: true, type: "directed" });
 
   const nodeIds = new Set(viewport.nodes.map((n) => n.id));
 
+  // Pre-compute which nodes have at least one edge.
+  const connectedIds = new Set<string>();
+  if (pruneIsolated) {
+    for (const edge of viewport.edges) {
+      if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+        connectedIds.add(edge.source);
+        connectedIds.add(edge.target);
+      }
+    }
+  }
+
   for (const node of viewport.nodes) {
+    // Skip isolated nodes when pruning is enabled.
+    if (pruneIsolated && !connectedIds.has(node.id)) {
+      continue;
+    }
+
     graph.addNode(node.id, {
       label: node.name,
       kind: node.kind,
@@ -30,7 +52,7 @@ export function loadGraph(viewport: ExportViewport): Graph {
   }
 
   for (const edge of viewport.edges) {
-    if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+    if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
       const edgeKey = `${edge.source}|${edge.target}|${edge.relation}`;
       // With multi:true, parallel edges with same source/target are allowed,
       // and the unique edgeKey prevents exact duplicates.

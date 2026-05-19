@@ -66,12 +66,33 @@ export interface ExportViewport {
   stats: ExportStats;
 }
 
+// Computed community metadata for the UI sidebar and cluster labels.
+export interface CommunityInfo {
+  id: number;
+  name: string;
+  color: string;
+  nodeCount: number;
+  centroidX: number;
+  centroidY: number;
+}
+
+// Zoom level buckets for level-of-detail rendering.
+export type ZoomLevel = "far" | "mid" | "close";
+
+export function classifyZoom(ratio: number): ZoomLevel {
+  if (ratio < 0.3) return "far";
+  if (ratio > 1.0) return "close";
+  return "mid";
+}
+
 // Filter state for the UI.
 export interface FilterState {
   codebaseId: string | null;
   nodeKinds: Set<NodeKind>;
   edgeRelations: Set<EdgeRelation>;
   searchQuery: string;
+  showIsolated: boolean;
+  selectedCommunities: Set<number>;
 }
 
 // Color palettes for node kinds and edge relations.
