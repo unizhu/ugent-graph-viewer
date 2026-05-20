@@ -1,9 +1,8 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Graph from "graphology";
-import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewport, CommunityInfo } from "../types";
+import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewport, CommunityInfo, NodeKind } from "../types";
 import { loadGraph, parseViewport } from "../graph/loader";
 import { countVisible } from "../graph/filters";
-import { runLayout } from "../graph/layout";
 import { assignCommunityColors } from "../graph/communities";
 import { detectCommunities, buildCommunityInfo } from "../graph/clustering";
 import { FilterPanel } from "./FilterPanel";
@@ -11,8 +10,19 @@ import { CommunityPanel } from "./CommunityPanel";
 import { SearchBar } from "./SearchBar";
 import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
-import { SigmaCanvas } from "../canvas/SigmaCanvas";
+import { ForceGraph3DCanvas } from "../canvas/ForceGraph3D";
 import { useDebounce } from "./useDebounce";
+
+const DEFAULT_NODE_KINDS = new Set<NodeKind>([
+  "module",
+  "struct",
+  "enum",
+  "function",
+  "trait",
+  "type_alias",
+  "constant",
+  "impl",
+]);
 
 let storedViewport: ExportViewport | null = null;
 
@@ -34,7 +44,7 @@ export function App() {
   const [communities, setCommunities] = useState<CommunityInfo[]>([]);
   const [filters, setFilters] = useState<FilterState>({
     codebaseId: null,
-    nodeKinds: new Set(),
+    nodeKinds: new Set(DEFAULT_NODE_KINDS),
     edgeRelations: new Set(),
     searchQuery: "",
     showIsolated: false,
@@ -42,8 +52,6 @@ export function App() {
   });
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
-  const sigmaRefreshRef = useRef<(() => void) | null>(null);
-  const layoutCleanupRef = useRef<(() => void) | null>(null);
 
   // Debounce search query to avoid excessive reducer recomputation.
   const debouncedSearchQuery = useDebounce(filters.searchQuery, 150);
@@ -59,15 +67,7 @@ export function App() {
       .catch(() => setManifestFiles([]));
   }, []);
 
-  const handleSigmaRefreshReady = useCallback((refresh: () => void) => {
-    sigmaRefreshRef.current = refresh;
-  }, []);
-
   const loadViewport = useCallback((viewport: ExportViewport) => {
-    // Kill any previous layout worker.
-    layoutCleanupRef.current?.();
-    layoutCleanupRef.current = null;
-
     setLoadingPhase("Parsing graph data...");
     storedViewport = viewport;
 
@@ -89,32 +89,23 @@ export function App() {
       setSelectedNode(null);
       graphRef.current = g;
 
-      // Reset filters to show everything.
+      // Reset filters to show everything except file and block by default on load.
       setFilters({
         codebaseId: null,
-        nodeKinds: new Set(),
+        nodeKinds: new Set(DEFAULT_NODE_KINDS),
         edgeRelations: new Set(),
         searchQuery: "",
         showIsolated: false,
         selectedCommunities: new Set(),
       });
 
-      // Set graph AFTER x,y positions are initialized (done in loadGraph).
-      // This ensures Sigma sees valid positions on first render.
+      // Build community info immediately.
+      const infos = buildCommunityInfo(g, communityColors);
+      setCommunities(infos);
+
       setGraph(g);
-
-      setLoadingPhase("Computing layout...");
-      const { cleanup } = runLayout(g, 300, () => {
-        setLoadingPhase("");
-        setLayoutRunning(false);
-
-        // Build community info AFTER layout is done so centroids are meaningful.
-        const infos = buildCommunityInfo(g, communityColors);
-        setCommunities(infos);
-
-        sigmaRefreshRef.current?.();
-      });
-      layoutCleanupRef.current = cleanup;
+      setLoadingPhase("");
+      setLayoutRunning(false);
     }, 0);
   }, []);
 
@@ -176,18 +167,10 @@ export function App() {
     detectCommunities(g);
     const communityColors = assignCommunityColors(g);
     graphRef.current = g;
+    
+    const infos = buildCommunityInfo(g, communityColors);
+    setCommunities(infos);
     setGraph(g);
-    setLayoutRunning(true);
-    setLoadingPhase("Re-computing layout...");
-
-    const { cleanup } = runLayout(g, 200, () => {
-      setLoadingPhase("");
-      setLayoutRunning(false);
-      const infos = buildCommunityInfo(g, communityColors);
-      setCommunities(infos);
-      sigmaRefreshRef.current?.();
-    });
-    layoutCleanupRef.current = cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.showIsolated]);
 
@@ -269,17 +252,9 @@ export function App() {
       </div>
       <div className="flex-1 relative">
         {graph ? (
-          <SigmaCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} onRefreshReady={handleSigmaRefreshReady} />
+          <ForceGraph3DCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} selectedNodeId={selectedNode} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm">Loading graph...</div>
-        )}
-        {layoutRunning && (
-          <div className="absolute inset-0 bg-gray-950/60 flex items-center justify-center z-10">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-gray-300">{loadingPhase || "Computing layout..."}</p>
-            </div>
-          </div>
         )}
       </div>
     </div>
