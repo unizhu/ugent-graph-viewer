@@ -163,6 +163,25 @@ export function FilterPanel({
         </div>
       </div>
 
+      {/* Quick toggles for kind visibility */}
+      <div>
+        <div className="text-xs font-semibold text-gray-400 mb-2">Quick Toggles</div>
+        <div className="flex flex-wrap gap-1 mb-2">
+          <KindQuickToggle
+            label="Show files"
+            kind="file"
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+          />
+          <KindQuickToggle
+            label="Show blocks"
+            kind="block"
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+          />
+        </div>
+      </div>
+
       {/* Isolated nodes toggle */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-400">
@@ -186,6 +205,94 @@ export function FilterPanel({
           />
         </button>
       </div>
+
+      {/* Aggregate to file view toggle */}
+      <div className="flex items-center justify-between">
+        <span
+          className="text-xs font-semibold text-gray-400"
+          title="Collapse symbol-level nodes into their parent file and dedupe edges between files."
+        >
+          Aggregate to File View
+        </span>
+        <button
+          onClick={() =>
+            onFiltersChange({
+              ...filters,
+              aggregateMode: !filters.aggregateMode,
+            })
+          }
+          className={`w-9 h-5 rounded-full transition-colors relative ${
+            filters.aggregateMode ? "bg-blue-500" : "bg-gray-700"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              filters.aggregateMode ? "left-[18px]" : "left-0.5"
+            }`}
+          />
+        </button>
+      </div>
     </div>
+  );
+}
+
+interface KindQuickToggleProps {
+  label: string;
+  kind: NodeKind;
+  filters: FilterState;
+  onFiltersChange: (filters: FilterState) => void;
+}
+
+function KindQuickToggle({
+  label,
+  kind,
+  filters,
+  onFiltersChange,
+}: KindQuickToggleProps) {
+  // When `nodeKinds` is empty all kinds are shown. Otherwise the kind is
+  // shown only if it's in the set.
+  const visible = filters.nodeKinds.size === 0 || filters.nodeKinds.has(kind);
+  const color = NODE_KIND_COLORS[kind] || "#6b7280";
+
+  const onClick = () => {
+    const next = new Set(filters.nodeKinds);
+    if (next.size === 0) {
+      // Empty means "all kinds"; toggling off means we have to enumerate
+      // the visible kinds explicitly minus this one.
+      const ALL: NodeKind[] = [
+        "file",
+        "module",
+        "struct",
+        "enum",
+        "function",
+        "trait",
+        "type_alias",
+        "constant",
+        "impl",
+        "block",
+      ];
+      for (const k of ALL) {
+        if (k !== kind) next.add(k);
+      }
+    } else if (next.has(kind)) {
+      next.delete(kind);
+    } else {
+      next.add(kind);
+    }
+    onFiltersChange({ ...filters, nodeKinds: next });
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className="px-2 py-1 rounded text-xs transition-all"
+      style={{
+        backgroundColor: visible ? color : "#1f2937",
+        color: visible ? "#fff" : "#9ca3af",
+        opacity: visible ? 1 : 0.7,
+      }}
+    >
+      {label}
+    </button>
   );
 }

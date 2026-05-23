@@ -93,6 +93,20 @@ export interface FilterState {
   searchQuery: string;
   showIsolated: boolean;
   selectedCommunities: Set<number>;
+  // When true, ForceGraph3D collapses symbol-level nodes into their parent
+  // file node and dedupes edges by (source_file, target_file, relation).
+  // Useful for seeing the macro topology without re-exporting the dataset.
+  aggregateMode: boolean;
+}
+
+// Breakdown of why nodes/edges are not visible. Returned from countVisible.
+export interface VisibilityCounts {
+  visibleNodes: number;
+  visibleEdges: number;
+  hiddenByKind: number;
+  hiddenByCommunity: number;
+  hiddenBySearch: number;
+  hiddenByCodebase: number;
 }
 
 // Color palettes for node kinds and edge relations.

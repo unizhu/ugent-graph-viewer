@@ -47,6 +47,134 @@ function shouldHideNode(filters: FilterState, data: {
   return false;
 }
 
+/**
+ * Build node and link arrays at the symbol level (default mode).
+ */
+function buildSymbolGraphData(graph: Graph, filters: FilterState) {
+  const nodes: any[] = [];
+  const nodeMap = new Map<string, any>();
+
+  graph.forEachNode((nodeId, attrs) => {
+    const isHidden = shouldHideNode(filters, {
+      label: attrs.label || nodeId,
+      kind: attrs.kind,
+      codebaseId: attrs.codebaseId,
+      filePath: attrs.filePath,
+      degree: attrs.degree || 0,
+      communityId: attrs.communityId,
+    });
+    if (isHidden) return;
+
+    const color = attrs.color || NODE_KIND_COLORS[attrs.kind as NodeKind] || "#6b7280";
+    const nodeObj = {
+      id: nodeId,
+      label: attrs.label || nodeId,
+      kind: attrs.kind,
+      codebaseId: attrs.codebaseId,
+      filePath: attrs.filePath,
+      degree: attrs.degree || 0,
+      color: color,
+      communityId: attrs.communityId,
+    };
+    nodes.push(nodeObj);
+    nodeMap.set(nodeId, nodeObj);
+  });
+
+  const links: any[] = [];
+  graph.forEachEdge((edgeId, attrs, source, target) => {
+    if (!nodeMap.has(source) || !nodeMap.has(target)) return;
+    if (filters.edgeRelations.size > 0 && !filters.edgeRelations.has(attrs.relation)) return;
+    links.push({
+      id: edgeId,
+      source: source,
+      target: target,
+      relation: attrs.relation,
+      confidence: attrs.confidence ?? 0.5,
+      color: EDGE_RELATION_COLORS[attrs.relation as EdgeRelation] || "#374151",
+    });
+  });
+
+  return { nodes, links };
+}
+
+/**
+ * Build a file-level macro view: collapse symbol-level nodes onto their parent
+ * file node (keyed by codebaseId::filePath) and dedupe edges by
+ * (source_file, target_file, relation). Edges where source and target share
+ * the same file are dropped (intra-file noise).
+ */
+function buildAggregatedGraphData(graph: Graph, filters: FilterState) {
+  const fileKey = (codebaseId: string, filePath: string) =>
+    `${codebaseId || ""}::${filePath || ""}`;
+
+  // Build a map of file-key -> aggregated node, summing degrees of children.
+  const fileNodes = new Map<string, any>();
+  // Map from any visible original node id -> its file-key, used during edge
+  // collapsing.
+  const idToFileKey = new Map<string, string>();
+
+  graph.forEachNode((nodeId, attrs) => {
+    const isHidden = shouldHideNode(filters, {
+      label: attrs.label || nodeId,
+      kind: attrs.kind,
+      codebaseId: attrs.codebaseId,
+      filePath: attrs.filePath,
+      degree: attrs.degree || 0,
+      communityId: attrs.communityId,
+    });
+    if (isHidden) return;
+    const filePath: string = attrs.filePath || "";
+    if (!filePath) return;
+    const codebaseId: string = attrs.codebaseId || "";
+    const key = fileKey(codebaseId, filePath);
+    idToFileKey.set(nodeId, key);
+
+    const existing = fileNodes.get(key);
+    if (existing) {
+      existing.degree += attrs.degree || 0;
+      existing.childCount += 1;
+    } else {
+      const fileLabel = filePath.split("/").pop() || filePath;
+      fileNodes.set(key, {
+        id: key,
+        label: fileLabel,
+        kind: "file",
+        codebaseId,
+        filePath,
+        degree: attrs.degree || 0,
+        color: NODE_KIND_COLORS.file,
+        communityId: attrs.communityId,
+        childCount: 1,
+      });
+    }
+  });
+
+  const links: any[] = [];
+  const seenEdge = new Set<string>();
+  graph.forEachEdge((_edgeId, attrs, source, target) => {
+    const srcKey = idToFileKey.get(source);
+    const tgtKey = idToFileKey.get(target);
+    if (!srcKey || !tgtKey) return;
+    if (srcKey === tgtKey) return;
+    if (filters.edgeRelations.size > 0 && !filters.edgeRelations.has(attrs.relation)) return;
+
+    const dedupeKey = `${srcKey}|${tgtKey}|${attrs.relation}`;
+    if (seenEdge.has(dedupeKey)) return;
+    seenEdge.add(dedupeKey);
+
+    links.push({
+      id: dedupeKey,
+      source: srcKey,
+      target: tgtKey,
+      relation: attrs.relation,
+      confidence: attrs.confidence ?? 0.5,
+      color: EDGE_RELATION_COLORS[attrs.relation as EdgeRelation] || "#374151",
+    });
+  });
+
+  return { nodes: Array.from(fileNodes.values()), links };
+}
+
 export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId }: ForceGraph3DProps) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -101,59 +229,10 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
 
   // Convert Graphology structure to react-force-graph-3d nodes/links format
   const graphData = useMemo(() => {
-    const nodes: any[] = [];
-    const nodeMap = new Map<string, any>();
-
-    // 1. Gather all non-hidden nodes
-    graph.forEachNode((nodeId, attrs) => {
-      const isHidden = shouldHideNode(filters, {
-        label: attrs.label || nodeId,
-        kind: attrs.kind,
-        codebaseId: attrs.codebaseId,
-        filePath: attrs.filePath,
-        degree: attrs.degree || 0,
-        communityId: attrs.communityId,
-      });
-
-      if (!isHidden) {
-        const color = attrs.color || NODE_KIND_COLORS[attrs.kind as NodeKind] || "#6b7280";
-        const nodeObj = {
-          id: nodeId,
-          label: attrs.label || nodeId,
-          kind: attrs.kind,
-          codebaseId: attrs.codebaseId,
-          filePath: attrs.filePath,
-          degree: attrs.degree || 0,
-          color: color,
-          communityId: attrs.communityId,
-        };
-        nodes.push(nodeObj);
-        nodeMap.set(nodeId, nodeObj);
-      }
-    });
-
-    // 2. Gather links between visible nodes
-    const links: any[] = [];
-    graph.forEachEdge((edgeId, attrs, source, target) => {
-      if (!nodeMap.has(source) || !nodeMap.has(target)) {
-        return;
-      }
-
-      if (filters.edgeRelations.size > 0 && !filters.edgeRelations.has(attrs.relation)) {
-        return;
-      }
-
-      links.push({
-        id: edgeId,
-        source: source,
-        target: target,
-        relation: attrs.relation,
-        confidence: attrs.confidence ?? 0.5,
-        color: EDGE_RELATION_COLORS[attrs.relation as EdgeRelation] || "#374151",
-      });
-    });
-
-    return { nodes, links };
+    if (filters.aggregateMode) {
+      return buildAggregatedGraphData(graph, filters);
+    }
+    return buildSymbolGraphData(graph, filters);
   }, [graph, filters]);
 
   // Handle node hover to highlight first-hop neighbors and links
@@ -170,16 +249,30 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
     const nextNodes = new Set<string>([node.id]);
     const nextLinks = new Set<string>();
 
-    graph.forEachEdge(node.id, (edgeId, _attrs, source, target) => {
-      nextLinks.add(edgeId);
-      nextNodes.add(source);
-      nextNodes.add(target);
-    });
+    if (filters.aggregateMode) {
+      // node.id is a synthetic file-key not present in the underlying graphology
+      // graph, so highlight first-hop neighbors via the rendered links instead.
+      for (const link of graphData.links) {
+        const src = typeof link.source === "object" ? link.source.id : link.source;
+        const tgt = typeof link.target === "object" ? link.target.id : link.target;
+        if (src === node.id || tgt === node.id) {
+          nextLinks.add(link.id);
+          nextNodes.add(src);
+          nextNodes.add(tgt);
+        }
+      }
+    } else if (graph.hasNode(node.id)) {
+      graph.forEachEdge(node.id, (edgeId, _attrs, source, target) => {
+        nextLinks.add(edgeId);
+        nextNodes.add(source);
+        nextNodes.add(target);
+      });
+    }
 
     setHighlightNodes(nextNodes);
     setHighlightLinks(nextLinks);
     setHoveredNode(node);
-  }, [graph, hoveredNode]);
+  }, [graph, hoveredNode, filters.aggregateMode, graphData]);
 
   // Zoom-to-focus on clicked node
   const handleNodeClick = useCallback((node: any) => {

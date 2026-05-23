@@ -49,6 +49,7 @@ export function App() {
     searchQuery: "",
     showIsolated: false,
     selectedCommunities: new Set(),
+    aggregateMode: false,
   });
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
@@ -97,6 +98,7 @@ export function App() {
         searchQuery: "",
         showIsolated: false,
         selectedCommunities: new Set(),
+        aggregateMode: false,
       });
 
       // Build community info immediately.
@@ -176,10 +178,27 @@ export function App() {
 
   // Compute visible counts for the stats panel (read-only, no graph mutation).
   const visibility = useMemo(() => {
-    if (!graphRef.current) return { visibleNodes: stats?.total_nodes ?? 0, visibleEdges: stats?.total_edges ?? 0 };
+    if (!graphRef.current) {
+      return {
+        visibleNodes: stats?.total_nodes ?? 0,
+        visibleEdges: stats?.total_edges ?? 0,
+        hiddenByKind: 0,
+        hiddenByCommunity: 0,
+        hiddenBySearch: 0,
+        hiddenByCodebase: 0,
+      };
+    }
     return countVisible(graphRef.current, debouncedFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedFilters, graph]);
+
+  // Isolated nodes are pruned at load time when showIsolated=false. Surface
+  // the count (total_nodes - graph.order) so the user can see how many were
+  // removed and toggle them back on.
+  const isolatedHidden = useMemo(() => {
+    if (!stats || !graph || filters.showIsolated) return 0;
+    return Math.max(0, stats.total_nodes - graph.order);
+  }, [stats, graph, filters.showIsolated]);
 
   if (!stats) {
     return (
@@ -226,7 +245,16 @@ export function App() {
           />
         </div>
         <div className="px-4">
-          <StatsPanel stats={stats} visibleNodes={visibility.visibleNodes} visibleEdges={visibility.visibleEdges} />
+          <StatsPanel
+            stats={stats}
+            visibleNodes={visibility.visibleNodes}
+            visibleEdges={visibility.visibleEdges}
+            hiddenByKind={visibility.hiddenByKind}
+            hiddenByCommunity={visibility.hiddenByCommunity}
+            hiddenBySearch={visibility.hiddenBySearch}
+            hiddenByCodebase={visibility.hiddenByCodebase}
+            isolatedHidden={isolatedHidden}
+          />
         </div>
         <div className="px-4 pb-4">
           <NodeDetail node={selectedNode ? getStoredNodes().find((n) => n.id === selectedNode) ?? null : null} />
