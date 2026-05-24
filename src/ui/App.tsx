@@ -24,6 +24,23 @@ const DEFAULT_NODE_KINDS = new Set<NodeKind>([
   "impl",
 ]);
 
+// Pick a sensible default kind filter for a freshly loaded export.
+// Code repos have function/struct/etc. and we want to hide file/block noise.
+// Document-only exports (e.g. converted PDFs) only contain file+block — using
+// the code-centric defaults would hide everything, so fall back to the kinds
+// that actually exist in the data.
+function pickDefaultKinds(viewport: ExportViewport): Set<NodeKind> {
+  const present = new Set<NodeKind>();
+  for (const [kind, count] of Object.entries(viewport.stats.nodes_by_kind)) {
+    if ((count as number) > 0) present.add(kind as NodeKind);
+  }
+  const intersection = new Set<NodeKind>();
+  for (const kind of DEFAULT_NODE_KINDS) {
+    if (present.has(kind)) intersection.add(kind);
+  }
+  return intersection.size > 0 ? intersection : present;
+}
+
 let storedViewport: ExportViewport | null = null;
 
 function getStoredNodes(): GraphNode[] {
@@ -90,10 +107,12 @@ export function App() {
       setSelectedNode(null);
       graphRef.current = g;
 
-      // Reset filters to show everything except file and block by default on load.
+      // Reset filters. Default to code kinds (function/struct/...) for code
+      // repos; for documents-only exports, pickDefaultKinds falls back to the
+      // kinds actually present so the canvas isn't blank on first load.
       setFilters({
         codebaseId: null,
-        nodeKinds: new Set(DEFAULT_NODE_KINDS),
+        nodeKinds: pickDefaultKinds(viewport),
         edgeRelations: new Set(),
         searchQuery: "",
         showIsolated: false,
