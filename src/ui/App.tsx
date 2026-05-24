@@ -32,7 +32,7 @@ const DEFAULT_NODE_KINDS = new Set<NodeKind>([
 function pickDefaultKinds(viewport: ExportViewport): Set<NodeKind> {
   const present = new Set<NodeKind>();
   for (const [kind, count] of Object.entries(viewport.stats.nodes_by_kind)) {
-    if ((count as number) > 0) present.add(kind as NodeKind);
+    if (Number(count) > 0) present.add(kind as NodeKind);
   }
   const intersection = new Set<NodeKind>();
   for (const kind of DEFAULT_NODE_KINDS) {
