@@ -40,9 +40,17 @@ export type EdgeRelation =
   | "implements"
   | "depends_on"
   | "documented_by"
-  | "tested_by";
+  | "tested_by"
+  | "similar_to"
+  | "related_to";
 
-export type EdgeSource = "deterministic" | "inferred" | "semantic";
+export type EdgeSource =
+  | "deterministic"
+  | "inferred"
+  | "semantic"
+  | "lifted"
+  | "embedding_sim"
+  | "cross_doc_llm";
 
 export interface CodebaseSummary {
   codebase_id: string;
@@ -64,6 +72,23 @@ export interface ExportViewport {
   nodes: GraphNode[];
   edges: GraphEdge[];
   stats: ExportStats;
+}
+
+// One chunk of file content returned by GET /v1/files/snippets. Mirrors
+// the Rust QdrantFileChunk struct.
+export interface FileSnippet {
+  chunk_index: number;
+  start_line: number;
+  end_line: number;
+  text: string;
+  symbol_name: string | null;
+}
+
+export interface FileSnippetsResponse {
+  codebase_id: string;
+  file_path: string;
+  chunks: FileSnippet[];
+  truncated: boolean;
 }
 
 // Computed community metadata for the UI sidebar and cluster labels.
@@ -133,4 +158,6 @@ export const EDGE_RELATION_COLORS: Record<EdgeRelation, string> = {
   depends_on: "#ec4899",
   documented_by: "#06b6d4",
   tested_by: "#f97316",
+  similar_to: "#14b8a6",
+  related_to: "#f59e0b",
 };
