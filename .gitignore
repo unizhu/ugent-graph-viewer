@@ -5,4 +5,5 @@ dist/
 
 # Exported graph data (keep manifest.json template)
 data/*.json
+data/
 !data/manifest.json
