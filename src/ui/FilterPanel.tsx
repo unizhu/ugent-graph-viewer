@@ -5,7 +5,7 @@ import type {
   CodebaseSummary,
   ExportStats,
 } from "../types";
-import { NODE_KIND_COLORS, EDGE_RELATION_COLORS } from "../types";
+import { nodeKindColor, edgeRelationColor } from "../theme/theme";
 
 interface FilterPanelProps {
   codebases: CodebaseSummary[];
@@ -99,7 +99,7 @@ export function FilterPanel({
         <div className="flex flex-wrap gap-1">
           {allNodeKinds.map((kind) => {
             const active = filters.nodeKinds.size === 0 || filters.nodeKinds.has(kind);
-            const color = NODE_KIND_COLORS[kind] || "#6b7280";
+            const color = nodeKindColor(kind);
             const count = stats.nodes_by_kind[kind] || 0;
             return (
               <button
@@ -142,7 +142,7 @@ export function FilterPanel({
           {allEdgeRelations.map((rel) => {
             const active =
               filters.edgeRelations.size === 0 || filters.edgeRelations.has(rel);
-            const color = EDGE_RELATION_COLORS[rel] || "#374151";
+            const color = edgeRelationColor(rel);
             const count = stats.edges_by_relation[rel] || 0;
             return (
               <button
@@ -252,7 +252,7 @@ function KindQuickToggle({
   // When `nodeKinds` is empty all kinds are shown. Otherwise the kind is
   // shown only if it's in the set.
   const visible = filters.nodeKinds.size === 0 || filters.nodeKinds.has(kind);
-  const color = NODE_KIND_COLORS[kind] || "#6b7280";
+  const color = nodeKindColor(kind);
 
   const onClick = () => {
     const next = new Set(filters.nodeKinds);

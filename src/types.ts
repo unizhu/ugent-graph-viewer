@@ -134,30 +134,7 @@ export interface VisibilityCounts {
   hiddenByCodebase: number;
 }
 
-// Color palettes for node kinds and edge relations.
-export const NODE_KIND_COLORS: Record<NodeKind, string> = {
-  file: "#6b7280",
-  module: "#8b5cf6",
-  struct: "#3b82f6",
-  enum: "#06b6d4",
-  function: "#10b981",
-  trait: "#f59e0b",
-  type_alias: "#ec4899",
-  constant: "#f97316",
-  impl: "#14b8a6",
-  block: "#4b5563",
-};
-
-export const EDGE_RELATION_COLORS: Record<EdgeRelation, string> = {
-  imports: "#8b5cf6",
-  calls: "#10b981",
-  defines: "#3b82f6",
-  contains: "#6b7280",
-  references: "#f59e0b",
-  implements: "#14b8a6",
-  depends_on: "#ec4899",
-  documented_by: "#06b6d4",
-  tested_by: "#f97316",
-  similar_to: "#14b8a6",
-  related_to: "#f59e0b",
-};
+// Node-kind and edge-relation colors now live in the theme module
+// (src/theme/theme.ts), driven by the console handoff payload so the
+// viewer matches the console's light/dark theme (R12). Use
+// `nodeKindColor` / `edgeRelationColor` from there instead of static maps.

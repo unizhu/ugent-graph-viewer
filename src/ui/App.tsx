@@ -12,6 +12,18 @@ import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
 import { ForceGraph3DCanvas } from "../canvas/ForceGraph3D";
 import { useDebounce } from "./useDebounce";
+import { createHandoff, hasConsoleOpener, type HandoffState } from "../handoff/handoff";
+import { HandoffStatus } from "./HandoffStatus";
+
+// Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
+// nodes are revealed in batches so the first frame is fast and the UI stays
+// responsive: the canvas seeds with PROGRESSIVE_INITIAL_BATCH highest-degree
+// nodes, then adds PROGRESSIVE_BATCH_STEP more every PROGRESSIVE_INTERVAL_MS
+// until the whole graph is shown. Tunable constants.
+const PROGRESSIVE_THRESHOLD = 1500;
+const PROGRESSIVE_INITIAL_BATCH = 800;
+const PROGRESSIVE_BATCH_STEP = 600;
+const PROGRESSIVE_INTERVAL_MS = 350;
 
 const DEFAULT_NODE_KINDS = new Set<NodeKind>([
   "module",
@@ -71,6 +83,19 @@ export function App() {
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
 
+  // Console handoff: when this tab was opened by the console, the graph is
+  // delivered over a postMessage handshake rather than a file load. Null
+  // means "standalone" (opened directly) - keep the file-load UI. A
+  // non-null state drives the full-screen handoff surfaces (R14) until a
+  // viewport arrives, after which the normal explorer renders.
+  const [handoffState, setHandoffState] = useState<HandoffState | null>(null);
+  const [focusNode, setFocusNode] = useState<string | null>(null);
+
+  // Progressive reveal cap (R18). undefined = render everything (small
+  // graphs). A finite value is ramped up by the effect below for large ones.
+  const [revealLimit, setRevealLimit] = useState<number | undefined>(undefined);
+  const [totalNodeCount, setTotalNodeCount] = useState(0);
+
   // Debounce search query to avoid excessive reducer recomputation.
   const debouncedSearchQuery = useDebounce(filters.searchQuery, 150);
   const debouncedFilters = useMemo(() => ({
@@ -124,11 +149,58 @@ export function App() {
       const infos = buildCommunityInfo(g, communityColors);
       setCommunities(infos);
 
+      // Progressive loading (R18): for large graphs, seed the canvas with an
+      // initial batch and let the ramp effect grow it; small graphs render in
+      // full immediately.
+      const nodeCount = g.order;
+      setTotalNodeCount(nodeCount);
+      setRevealLimit(nodeCount > PROGRESSIVE_THRESHOLD ? PROGRESSIVE_INITIAL_BATCH : undefined);
+
       setGraph(g);
       setLoadingPhase("");
       setLayoutRunning(false);
     }, 0);
   }, []);
+
+  // Progressive reveal ramp (R18): once a finite revealLimit is set, grow it
+  // by PROGRESSIVE_BATCH_STEP on an interval until the whole graph is shown,
+  // then clear the cap. Chunked insertion happens in the canvas memo, which
+  // re-derives graphData from the new limit while keeping node positions.
+  useEffect(() => {
+    if (revealLimit === undefined || revealLimit >= totalNodeCount) return;
+    const timer = window.setInterval(() => {
+      setRevealLimit((prev) => {
+        if (prev === undefined) return undefined;
+        const next = prev + PROGRESSIVE_BATCH_STEP;
+        return next >= totalNodeCount ? undefined : next; // undefined = full
+      });
+    }, PROGRESSIVE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [revealLimit, totalNodeCount]);
+
+  // Deep link: ?node=<id> focuses a node once the graph loads (R13). The
+  // console may also send a focus node inside the handoff payload; whichever
+  // is present wins (handoff payload takes precedence, set below).
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("node");
+    if (fromUrl) setFocusNode(fromUrl);
+  }, []);
+
+  // Start the console handoff exactly once, only when opened with an opener.
+  // Standalone opens (direct URL, file load) skip this entirely and keep the
+  // existing loader UI.
+  useEffect(() => {
+    if (!hasConsoleOpener()) return;
+    const controller = createHandoff((state) => {
+      setHandoffState(state);
+      if (state.status === "ready") {
+        if (state.focusNode) setFocusNode(state.focusNode);
+        loadViewport(state.viewport);
+      }
+    });
+    controller.start();
+    return () => controller.dispose();
+  }, [loadViewport]);
 
   const handleFileLoad = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -219,6 +291,13 @@ export function App() {
     return Math.max(0, stats.total_nodes - graph.order);
   }, [stats, graph, filters.showIsolated]);
 
+  // While a console handoff is in flight (or ended in a terminal state)
+  // and no graph has loaded yet, show the dedicated handoff surface instead
+  // of the file-load screen (R14).
+  if (handoffState && handoffState.status !== "ready" && !stats) {
+    return <HandoffStatus state={handoffState} />;
+  }
+
   if (!stats) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center gap-4 bg-gray-950">
@@ -249,8 +328,14 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-gray-950">
-      <div className="flex flex-col w-72 shrink-0 overflow-y-auto">
+    <div
+      className="flex h-screen w-screen"
+      style={{ background: "var(--gv-bg)", color: "var(--gv-text-primary)" }}
+    >
+      <div
+        className="flex flex-col w-72 shrink-0 overflow-y-auto"
+        style={{ background: "var(--gv-surface)", borderRight: "1px solid var(--gv-border)" }}
+      >
         <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
         <div className="px-4 py-2">
           <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
@@ -298,8 +383,26 @@ export function App() {
         {layoutRunning && <div className="px-4 pb-4 text-xs text-blue-400 animate-pulse">{loadingPhase || "Computing layout..."}</div>}
       </div>
       <div className="flex-1 relative">
+        {revealLimit !== undefined && totalNodeCount > PROGRESSIVE_THRESHOLD && (
+          <div
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg flex items-center gap-2"
+            style={{
+              background: "var(--gv-surface-raised)",
+              color: "var(--gv-text-primary)",
+              border: "1px solid var(--gv-border)",
+            }}
+          >
+            <span
+              className="h-2 w-2 rounded-full animate-pulse"
+              style={{ background: "var(--gv-accent)" }}
+              aria-hidden="true"
+            />
+            Loading large graph — showing {Math.min(revealLimit, totalNodeCount).toLocaleString()} of{" "}
+            {totalNodeCount.toLocaleString()} nodes…
+          </div>
+        )}
         {graph ? (
-          <ForceGraph3DCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} selectedNodeId={selectedNode} />
+          <ForceGraph3DCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} selectedNodeId={selectedNode} focusNodeId={focusNode} onFocusHandled={() => setFocusNode(null)} revealLimit={revealLimit} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm">Loading graph...</div>
         )}
