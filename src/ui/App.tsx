@@ -4,17 +4,27 @@ import type { FilterState, CodebaseSummary, ExportStats, GraphNode, ExportViewpo
 import { loadGraph, parseViewport } from "../graph/loader";
 import { countVisible } from "../graph/filters";
 import { assignCommunityColors } from "../graph/communities";
-import { detectCommunities, buildCommunityInfo } from "../graph/clustering";
+import { detectCommunitiesAsync, buildCommunityInfo } from "../graph/clustering";
 import { FilterPanel } from "./FilterPanel";
 import { CommunityPanel } from "./CommunityPanel";
 import { SearchBar } from "./SearchBar";
 import { StatsPanel } from "./StatsPanel";
 import { NodeDetail } from "./NodeDetail";
-import { ForceGraph3DCanvas } from "../canvas/ForceGraph3D";
+import { GraphCanvas } from "../canvas/GraphCanvas";
 import { useDebounce } from "./useDebounce";
 import { createHandoff, hasConsoleOpener, type HandoffState } from "../handoff/handoff";
 import { HandoffStatus } from "./HandoffStatus";
 import { ThemeToggle, useThemeName } from "./ThemeToggle";
+import { RenderControls } from "./RenderControls";
+import { LargeGraphPrompt, type LoadChoice } from "./LargeGraphPrompt";
+import {
+  type RenderMode,
+  type OrbitSettings,
+  loadRenderMode,
+  saveRenderMode,
+  loadOrbit,
+  saveOrbit,
+} from "../canvas/render-settings";
 
 // Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
 // nodes are revealed in batches so the first frame is fast and the UI stays
@@ -25,6 +35,11 @@ const PROGRESSIVE_THRESHOLD = 1500;
 const PROGRESSIVE_INITIAL_BATCH = 800;
 const PROGRESSIVE_BATCH_STEP = 600;
 const PROGRESSIVE_INTERVAL_MS = 350;
+
+// Above this node count, prompt the user to choose how to open the graph
+// (File View / 2D full / 3D full) before rendering, so a huge export doesn't
+// drop them straight into the heaviest path (R5). Tunable.
+const LARGE_GRAPH_PROMPT_THRESHOLD = 8000;
 
 const DEFAULT_NODE_KINDS = new Set<NodeKind>([
   "module",
@@ -84,6 +99,16 @@ export function App() {
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
 
+  // Render mode (2D/3D) and auto-orbit settings, persisted per session (R1, R2).
+  const [renderMode, setRenderMode] = useState<RenderMode>(() => loadRenderMode());
+  const [orbit, setOrbit] = useState<OrbitSettings>(() => loadOrbit());
+  useEffect(() => saveRenderMode(renderMode), [renderMode]);
+  useEffect(() => saveOrbit(orbit), [orbit]);
+
+  // Large-graph load prompt (R5): when a big viewport is pending, hold it here
+  // and show the chooser instead of rendering straight away.
+  const [pendingViewport, setPendingViewport] = useState<ExportViewport | null>(null);
+
   // Re-render the whole tree (chrome + canvas) when the theme changes, whether
   // from the console handoff or the sidebar toggle. The canvas reads
   // `currentTheme()` at render, so it needs App to re-render to re-tint.
@@ -116,19 +141,26 @@ export function App() {
       .catch(() => setManifestFiles([]));
   }, []);
 
-  const loadViewport = useCallback((viewport: ExportViewport) => {
+  const loadViewport = useCallback((viewport: ExportViewport, choice?: LoadChoice) => {
     setLoadingPhase("Parsing graph data...");
     storedViewport = viewport;
 
+    // Apply the load choice (R5): File View aggregates; 2D/3D full set the
+    // render mode. Absent (small graph), keep symbol view + persisted mode.
+    const aggregate = choice === "file";
+    if (choice === "twod") setRenderMode("2d");
+    else if (choice === "threed") setRenderMode("3d");
+
     // Use setTimeout to let the loading phase render before heavy work.
-    setTimeout(() => {
+    setTimeout(async () => {
       setLoadingPhase("Building graph structure...");
       // By default, prune isolated nodes (showIsolated=false).
       const g = loadGraph(viewport, true);
 
-      // Detect communities client-side if not provided by the server.
+      // Detect communities off the main thread (R3) if not provided by the
+      // server; falls back to a synchronous pass when Workers are unavailable.
       setLoadingPhase("Detecting communities...");
-      detectCommunities(g);
+      await detectCommunitiesAsync(g);
 
       // Assign community colors based on detected communityIds.
       const communityColors = assignCommunityColors(g);
@@ -148,7 +180,7 @@ export function App() {
         searchQuery: "",
         showIsolated: false,
         selectedCommunities: new Set(),
-        aggregateMode: false,
+        aggregateMode: aggregate,
       });
 
       // Build community info immediately.
@@ -167,6 +199,26 @@ export function App() {
       setLayoutRunning(false);
     }, 0);
   }, []);
+
+  // Gate loads through the large-graph chooser (R5). Above the threshold we
+  // stash the viewport and show the prompt; below it we load straight away.
+  const beginLoad = useCallback((viewport: ExportViewport) => {
+    const nodeCount = viewport.stats?.total_nodes ?? viewport.nodes?.length ?? 0;
+    if (nodeCount > LARGE_GRAPH_PROMPT_THRESHOLD) {
+      setLayoutRunning(false);
+      setPendingViewport(viewport);
+      return;
+    }
+    loadViewport(viewport);
+  }, [loadViewport]);
+
+  const handleLoadChoice = useCallback((choice: LoadChoice) => {
+    const viewport = pendingViewport;
+    setPendingViewport(null);
+    if (!viewport) return;
+    setLayoutRunning(true);
+    loadViewport(viewport, choice);
+  }, [pendingViewport, loadViewport]);
 
   // Progressive reveal ramp (R18): once a finite revealLimit is set, grow it
   // by PROGRESSIVE_BATCH_STEP on an interval until the whole graph is shown,
@@ -201,12 +253,12 @@ export function App() {
       setHandoffState(state);
       if (state.status === "ready") {
         if (state.focusNode) setFocusNode(state.focusNode);
-        loadViewport(state.viewport);
+        beginLoad(state.viewport);
       }
     });
     controller.start();
     return () => controller.dispose();
-  }, [loadViewport]);
+  }, [beginLoad]);
 
   const handleFileLoad = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -217,13 +269,13 @@ export function App() {
       reader.onload = (e) => {
         const text = e.target?.result;
         if (typeof text !== "string") { setLayoutRunning(false); return; }
-        try { loadViewport(parseViewport(text)); }
+        try { beginLoad(parseViewport(text)); }
         catch { setLayoutRunning(false); alert("Failed to parse JSON."); }
       };
       reader.onerror = () => { setLayoutRunning(false); alert("Failed to read file."); };
       reader.readAsText(file, "UTF-8");
     },
-    [loadViewport],
+    [beginLoad],
   );
 
   const handleLoadFromData = useCallback(
@@ -231,10 +283,10 @@ export function App() {
       setLayoutRunning(true);
       fetch("/data/" + fileName)
         .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then((text) => loadViewport(parseViewport(text)))
+        .then((text) => beginLoad(parseViewport(text)))
         .catch((err) => { setLayoutRunning(false); alert("Failed to load " + fileName + ": " + err); });
     },
-    [loadViewport],
+    [beginLoad],
   );
 
   const handleToggleCommunity = useCallback((id: number) => {
@@ -263,13 +315,13 @@ export function App() {
     // Reload graph with new pruneIsolated setting.
     const viewport = storedViewport;
     const g = loadGraph(viewport, !filters.showIsolated);
-    detectCommunities(g);
-    const communityColors = assignCommunityColors(g);
-    graphRef.current = g;
-    
-    const infos = buildCommunityInfo(g, communityColors);
-    setCommunities(infos);
-    setGraph(g);
+    void detectCommunitiesAsync(g).then(() => {
+      const communityColors = assignCommunityColors(g);
+      graphRef.current = g;
+      const infos = buildCommunityInfo(g, communityColors);
+      setCommunities(infos);
+      setGraph(g);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.showIsolated]);
 
@@ -336,6 +388,13 @@ export function App() {
         <p className="text-xs mt-2" style={{ color: "var(--gv-text-secondary)" }}>
           Export: <code style={{ color: "var(--gv-text-secondary)" }}>ugent-context-engine graph export &lt;codebase_id&gt; --no-blocks --no-contains</code>
         </p>
+        {pendingViewport && (
+          <LargeGraphPrompt
+            nodeCount={pendingViewport.stats?.total_nodes ?? pendingViewport.nodes?.length ?? 0}
+            edgeCount={pendingViewport.stats?.total_edges ?? pendingViewport.edges?.length ?? 0}
+            onChoose={handleLoadChoice}
+          />
+        )}
       </div>
     );
   }
@@ -351,6 +410,14 @@ export function App() {
       >
         <div className="flex items-center justify-end px-4 pt-4">
           <ThemeToggle />
+        </div>
+        <div className="px-4 pt-3">
+          <RenderControls
+            mode={renderMode}
+            onModeChange={setRenderMode}
+            orbit={orbit}
+            onOrbitChange={setOrbit}
+          />
         </div>
         <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
         <div className="px-4 py-2">
@@ -422,11 +489,28 @@ export function App() {
           </div>
         )}
         {graph ? (
-          <ForceGraph3DCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} selectedNodeId={selectedNode} focusNodeId={focusNode} onFocusHandled={() => setFocusNode(null)} revealLimit={revealLimit} />
+          <GraphCanvas
+            graph={graph}
+            filters={debouncedFilters}
+            onNodeClick={(nodeId) => setSelectedNode(nodeId)}
+            selectedNodeId={selectedNode}
+            focusNodeId={focusNode}
+            onFocusHandled={() => setFocusNode(null)}
+            revealLimit={revealLimit}
+            mode={renderMode}
+            orbit={orbit}
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: "var(--gv-text-secondary)" }}>Loading graph...</div>
         )}
       </div>
+      {pendingViewport && (
+        <LargeGraphPrompt
+          nodeCount={pendingViewport.stats?.total_nodes ?? pendingViewport.nodes?.length ?? 0}
+          edgeCount={pendingViewport.stats?.total_edges ?? pendingViewport.edges?.length ?? 0}
+          onChoose={handleLoadChoice}
+        />
+      )}
     </div>
   );
 }

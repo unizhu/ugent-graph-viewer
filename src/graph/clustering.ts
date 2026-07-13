@@ -2,31 +2,41 @@ import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import type { CommunityInfo } from "../types";
 
-/**
- * Run Louvain community detection on the graph.
- *
- * If the graph already has `communityId` attributes (server-computed),
- * those are used. Otherwise we run client-side Louvain and write the
- * `communityId` attribute onto each node.
- */
-export function detectCommunities(graph: Graph): void {
-  // Check if server already assigned communities.
-  let hasServerCommunities = false;
+/** True when the graph already carries server-computed community ids. */
+export function hasServerCommunities(graph: Graph): boolean {
+  let found = false;
   graph.forEachNode((_node, attrs) => {
     if (attrs.communityId != null) {
-      hasServerCommunities = true;
+      found = true;
       return false; // break
     }
     return undefined;
   });
+  return found;
+}
 
-  if (hasServerCommunities) {
-    return;
+/** Write a {nodeId: communityId} map back onto the graph's node attributes. */
+export function applyCommunities(graph: Graph, communities: Record<string, number>): void {
+  for (const [nodeId, communityId] of Object.entries(communities)) {
+    if (graph.hasNode(nodeId)) {
+      graph.setNodeAttribute(nodeId, "communityId", communityId);
+    }
   }
+}
+
+/**
+ * Run Louvain community detection on the graph (synchronous, main-thread).
+ *
+ * If the graph already has `communityId` attributes (server-computed),
+ * those are used. Otherwise we run client-side Louvain and write the
+ * `communityId` attribute onto each node. Prefer `detectCommunitiesAsync`
+ * for large graphs so the heavy Louvain pass runs off the main thread (R3);
+ * this remains the fallback when a Worker is unavailable.
+ */
+export function detectCommunities(graph: Graph): void {
+  if (hasServerCommunities(graph)) return;
 
   // Client-side Louvain on an undirected copy.
-  // Louvain requires an undirected or mixed graph, but our graph is directed.
-  // Build a simple undirected view for the algorithm.
   const undirected = new Graph({ type: "undirected" });
   graph.forEachNode((node) => {
     if (!undirected.hasNode(node)) {
@@ -43,15 +53,64 @@ export function detectCommunities(graph: Graph): void {
 
   if (undirected.order === 0) return;
 
-  // Run Louvain. Returns { nodeId: communityId }.
   const communities = louvain(undirected);
+  applyCommunities(graph, communities);
+}
 
-  // Write back to the original directed graph.
-  for (const [nodeId, communityId] of Object.entries(communities)) {
-    if (graph.hasNode(nodeId)) {
-      graph.setNodeAttribute(nodeId, "communityId", communityId);
+/**
+ * Off-main-thread community detection (R3). Ships the edge list to a Web
+ * Worker running Louvain, then applies the result. Falls back to the
+ * synchronous `detectCommunities` if Workers are unavailable or the worker
+ * errors, so behavior is preserved everywhere.
+ */
+export function detectCommunitiesAsync(graph: Graph): Promise<void> {
+  return new Promise((resolve) => {
+    if (hasServerCommunities(graph)) {
+      resolve();
+      return;
     }
-  }
+
+    if (typeof Worker === "undefined") {
+      detectCommunities(graph);
+      resolve();
+      return;
+    }
+
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL("./community.worker.ts", import.meta.url), { type: "module" });
+    } catch {
+      detectCommunities(graph);
+      resolve();
+      return;
+    }
+
+    const nodes: string[] = [];
+    graph.forEachNode((node) => nodes.push(node));
+    const edges: Array<[string, string]> = [];
+    graph.forEachEdge((_edge, _attrs, source, target) => {
+      edges.push([source, target]);
+    });
+
+    const finish = (communities: Record<string, number> | null) => {
+      worker.terminate();
+      if (communities) {
+        applyCommunities(graph, communities);
+        resolve();
+      } else {
+        // Worker failed: fall back to the synchronous pass so we still cluster.
+        detectCommunities(graph);
+        resolve();
+      }
+    };
+
+    worker.onmessage = (event: MessageEvent<{ communities: Record<string, number> }>) => {
+      finish(event.data?.communities ?? {});
+    };
+    worker.onerror = () => finish(null);
+
+    worker.postMessage({ nodes, edges });
+  });
 }
 
 /**

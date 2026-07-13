@@ -9,7 +9,7 @@ import type {
 /**
  * Compute visibility counts from filter state WITHOUT mutating the graph.
  * The actual visual filtering is handled by the ForceGraph3D `graphData`
- * memo (see src/canvas/ForceGraph3D.tsx).
+ * memo (see src/canvas/graph-data.ts).
  *
  * Tracks per-reason hidden counts so the StatsPanel can surface why nodes
  * are missing from the canvas.
