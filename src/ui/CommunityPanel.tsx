@@ -24,13 +24,14 @@ export function CommunityPanel({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-gray-400">
+        <span className="text-xs font-semibold" style={{ color: "var(--gv-text-secondary)" }}>
           Communities ({communities.length})
         </span>
         {selectedCommunities.size > 0 && (
           <button
             onClick={onClearSelection}
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs hover:opacity-80"
+            style={{ color: "var(--gv-accent)" }}
           >
             Show All
           </button>
@@ -45,7 +46,7 @@ export function CommunityPanel({
             <button
               key={c.id}
               onClick={() => onToggleCommunity(c.id)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all hover:bg-gray-800"
+              className="flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all hover:bg-[var(--gv-surface-raised)]"
               style={{
                 opacity: active ? 1 : 0.35,
               }}
@@ -54,10 +55,10 @@ export function CommunityPanel({
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: c.color }}
               />
-              <span className="text-gray-300 truncate text-left flex-1">
+              <span className="truncate text-left flex-1" style={{ color: "var(--gv-text-primary)" }}>
                 {c.name}
               </span>
-              <span className="text-gray-500 tabular-nums shrink-0">
+              <span className="tabular-nums shrink-0" style={{ color: "var(--gv-text-secondary)" }}>
                 {c.nodeCount}
               </span>
             </button>

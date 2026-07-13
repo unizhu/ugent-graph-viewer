@@ -88,6 +88,18 @@ export function currentTheme(): GraphThemePayload {
   return current;
 }
 
+// Theme-change subscribers. The canvas reads `currentTheme()` at render, so a
+// runtime theme swap (console handoff or the sidebar toggle) must re-render the
+// React tree. Components subscribe and bump local state; `applyTheme` notifies.
+type ThemeListener = (theme: GraphThemePayload) => void;
+const listeners = new Set<ThemeListener>();
+
+/** Subscribe to theme changes. Returns an unsubscribe function. */
+export function subscribeTheme(listener: ThemeListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 /** Narrow-validate an untrusted `theme` field from a postMessage payload. */
 export function isThemePayload(value: unknown): value is GraphThemePayload {
   if (!value || typeof value !== "object") return false;
@@ -127,6 +139,27 @@ export function applyTheme(payload: GraphThemePayload): void {
   for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v);
   root.classList.toggle("dark", current.theme === "dark");
   root.classList.toggle("light", current.theme === "light");
+
+  for (const listener of listeners) listener(current);
+}
+
+/**
+ * Switch to `next` (light/dark) at runtime, e.g. from the sidebar toggle.
+ * Keeps the current node-kind palette (hues read well on both canvases) and
+ * uses the built-in token set for the target theme so the swap works even for
+ * a standalone open that never received a console handoff.
+ */
+export function setTheme(next: GraphTheme): void {
+  if (next === current.theme) return;
+  const tokens = next === "light" ? FALLBACK_LIGHT_TOKENS : FALLBACK_DARK.tokens;
+  applyTheme({ theme: next, tokens, kinds: current.kinds });
+}
+
+/** Flip between light and dark. Convenience wrapper over `setTheme`. */
+export function toggleTheme(): GraphTheme {
+  const next: GraphTheme = current.theme === "dark" ? "light" : "dark";
+  setTheme(next);
+  return next;
 }
 
 /** Per-kind node color from the active theme palette. */

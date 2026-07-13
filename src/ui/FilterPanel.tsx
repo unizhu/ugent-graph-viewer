@@ -54,12 +54,20 @@ export function FilterPanel({
   const allEdgeRelations = Object.keys(stats.edges_by_relation) as EdgeRelation[];
 
   return (
-    <div className="w-72 bg-gray-900 border-r border-gray-800 p-4 flex flex-col gap-4 overflow-y-auto">
-      <h1 className="text-lg font-bold text-white">UGENT Graph Viewer</h1>
+    <div
+      className="w-72 p-4 flex flex-col gap-4 overflow-y-auto"
+      style={{ background: "var(--gv-surface)", borderRight: "1px solid var(--gv-border)" }}
+    >
+      <h1 className="text-lg font-bold" style={{ color: "var(--gv-text-primary)" }}>
+        UGENT Graph Viewer
+      </h1>
 
       {/* Codebase selector */}
       <div>
-        <label className="text-xs font-semibold text-gray-400 mb-1 block">
+        <label
+          className="text-xs font-semibold mb-1 block"
+          style={{ color: "var(--gv-text-secondary)" }}
+        >
           Codebase
         </label>
         <select
@@ -67,9 +75,12 @@ export function FilterPanel({
           onChange={(e) =>
             selectCodebase(e.target.value || null)
           }
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2
-                     text-sm text-gray-200 focus:outline-none focus:ring-2
-                     focus:ring-blue-500"
+          className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--gv-accent)]"
+          style={{
+            background: "var(--gv-surface-raised)",
+            border: "1px solid var(--gv-border)",
+            color: "var(--gv-text-primary)",
+          }}
         >
           <option value="">All ({codebases.length})</option>
           {codebases.map((c) => (
@@ -83,7 +94,7 @@ export function FilterPanel({
       {/* Node kind toggles */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-400">Node Kinds</span>
+          <span className="text-xs font-semibold" style={{ color: "var(--gv-text-secondary)" }}>Node Kinds</span>
           <button
             onClick={() =>
               onFiltersChange({
@@ -91,7 +102,8 @@ export function FilterPanel({
                 nodeKinds: new Set(),
               })
             }
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs hover:opacity-80"
+            style={{ color: "var(--gv-accent)" }}
           >
             Clear
           </button>
@@ -107,8 +119,8 @@ export function FilterPanel({
                 onClick={() => toggleKind(kind)}
                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-all"
                 style={{
-                  backgroundColor: active ? color : "#1f2937",
-                  color: active ? "#fff" : "#6b7280",
+                  backgroundColor: active ? color : "var(--gv-surface-raised)",
+                  color: active ? "#fff" : "var(--gv-text-secondary)",
                   opacity: active ? 1 : 0.5,
                 }}
               >
@@ -123,7 +135,7 @@ export function FilterPanel({
       {/* Edge relation toggles */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-400">
+          <span className="text-xs font-semibold" style={{ color: "var(--gv-text-secondary)" }}>
             Edge Relations
           </span>
           <button
@@ -133,7 +145,8 @@ export function FilterPanel({
                 edgeRelations: new Set(),
               })
             }
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs hover:opacity-80"
+            style={{ color: "var(--gv-accent)" }}
           >
             Clear
           </button>
@@ -150,8 +163,8 @@ export function FilterPanel({
                 onClick={() => toggleRelation(rel)}
                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-all"
                 style={{
-                  backgroundColor: active ? color : "#1f2937",
-                  color: active ? "#fff" : "#6b7280",
+                  backgroundColor: active ? color : "var(--gv-surface-raised)",
+                  color: active ? "#fff" : "var(--gv-text-secondary)",
                   opacity: active ? 1 : 0.5,
                 }}
               >
@@ -165,7 +178,7 @@ export function FilterPanel({
 
       {/* Quick toggles for kind visibility */}
       <div>
-        <div className="text-xs font-semibold text-gray-400 mb-2">Quick Toggles</div>
+        <div className="text-xs font-semibold mb-2" style={{ color: "var(--gv-text-secondary)" }}>Quick Toggles</div>
         <div className="flex flex-wrap gap-1 mb-2">
           <KindQuickToggle
             label="Show files"
@@ -184,7 +197,7 @@ export function FilterPanel({
 
       {/* Isolated nodes toggle */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-400">
+        <span className="text-xs font-semibold" style={{ color: "var(--gv-text-secondary)" }}>
           Show Isolated Nodes
         </span>
         <button
@@ -194,9 +207,10 @@ export function FilterPanel({
               showIsolated: !filters.showIsolated,
             })
           }
-          className={`w-9 h-5 rounded-full transition-colors relative ${
-            filters.showIsolated ? "bg-blue-500" : "bg-gray-700"
-          }`}
+          className="w-9 h-5 rounded-full transition-colors relative"
+          style={{
+            background: filters.showIsolated ? "var(--gv-accent)" : "var(--gv-surface-raised)",
+          }}
         >
           <span
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -209,7 +223,8 @@ export function FilterPanel({
       {/* Aggregate to file view toggle */}
       <div className="flex items-center justify-between">
         <span
-          className="text-xs font-semibold text-gray-400"
+          className="text-xs font-semibold"
+          style={{ color: "var(--gv-text-secondary)" }}
           title="Collapse symbol-level nodes into their parent file and dedupe edges between files."
         >
           Aggregate to File View
@@ -221,9 +236,10 @@ export function FilterPanel({
               aggregateMode: !filters.aggregateMode,
             })
           }
-          className={`w-9 h-5 rounded-full transition-colors relative ${
-            filters.aggregateMode ? "bg-blue-500" : "bg-gray-700"
-          }`}
+          className="w-9 h-5 rounded-full transition-colors relative"
+          style={{
+            background: filters.aggregateMode ? "var(--gv-accent)" : "var(--gv-surface-raised)",
+          }}
         >
           <span
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -287,8 +303,8 @@ function KindQuickToggle({
       onClick={onClick}
       className="px-2 py-1 rounded text-xs transition-all"
       style={{
-        backgroundColor: visible ? color : "#1f2937",
-        color: visible ? "#fff" : "#9ca3af",
+        backgroundColor: visible ? color : "var(--gv-surface-raised)",
+        color: visible ? "#fff" : "var(--gv-text-secondary)",
         opacity: visible ? 1 : 0.7,
       }}
     >

@@ -14,6 +14,7 @@ import { ForceGraph3DCanvas } from "../canvas/ForceGraph3D";
 import { useDebounce } from "./useDebounce";
 import { createHandoff, hasConsoleOpener, type HandoffState } from "../handoff/handoff";
 import { HandoffStatus } from "./HandoffStatus";
+import { ThemeToggle, useThemeName } from "./ThemeToggle";
 
 // Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
 // nodes are revealed in batches so the first frame is fast and the UI stays
@@ -82,6 +83,11 @@ export function App() {
   });
   const [manifestFiles, setManifestFiles] = useState<string[]>([]);
   const graphRef = useRef<Graph | null>(null);
+
+  // Re-render the whole tree (chrome + canvas) when the theme changes, whether
+  // from the console handoff or the sidebar toggle. The canvas reads
+  // `currentTheme()` at render, so it needs App to re-render to re-tint.
+  useThemeName();
 
   // Console handoff: when this tab was opened by the console, the graph is
   // delivered over a postMessage handshake rather than a file load. Null
@@ -300,28 +306,35 @@ export function App() {
 
   if (!stats) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center gap-4 bg-gray-950">
-        <h1 className="text-2xl font-bold text-white">UGENT Graph Viewer</h1>
-        <p className="text-gray-500 text-sm max-w-md text-center">
+      <div
+        className="h-screen w-screen flex flex-col items-center justify-center gap-4"
+        style={{ background: "var(--gv-bg)", color: "var(--gv-text-primary)" }}
+      >
+        <h1 className="text-2xl font-bold" style={{ color: "var(--gv-text-primary)" }}>UGENT Graph Viewer</h1>
+        <p className="text-sm max-w-md text-center" style={{ color: "var(--gv-text-secondary)" }}>
           Export your graph via CLI, then load it here to explore.
         </p>
         {manifestFiles.length > 0 && (
           <div className="flex flex-col gap-2 items-center">
-            <p className="text-xs text-gray-600 mb-1">Available exports:</p>
+            <p className="text-xs mb-1" style={{ color: "var(--gv-text-secondary)" }}>Available exports:</p>
             {manifestFiles.map((f) => (
               <button key={f} onClick={() => handleLoadFromData(f)}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 font-mono transition-colors">
+                className="px-4 py-2 rounded-lg text-sm font-mono transition-colors hover:opacity-80"
+                style={{ background: "var(--gv-surface-raised)", color: "var(--gv-text-primary)" }}>
                 {f}
               </button>
             ))}
           </div>
         )}
-        <label className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-medium cursor-pointer transition-colors">
+        <label
+          className="px-6 py-3 rounded-lg font-medium cursor-pointer transition-opacity hover:opacity-90"
+          style={{ background: "var(--gv-accent)", color: "var(--gv-accent-foreground)" }}
+        >
           {layoutRunning ? (loadingPhase || "Loading...") : "Load Graph JSON"}
           <input type="file" accept=".json" onChange={handleFileLoad} disabled={layoutRunning} className="hidden" />
         </label>
-        <p className="text-xs text-gray-600 mt-2">
-          Export: <code className="text-gray-500">ugent-context-engine graph export &lt;codebase_id&gt; --no-blocks --no-contains</code>
+        <p className="text-xs mt-2" style={{ color: "var(--gv-text-secondary)" }}>
+          Export: <code style={{ color: "var(--gv-text-secondary)" }}>ugent-context-engine graph export &lt;codebase_id&gt; --no-blocks --no-contains</code>
         </p>
       </div>
     );
@@ -336,6 +349,9 @@ export function App() {
         className="flex flex-col w-72 shrink-0 overflow-y-auto"
         style={{ background: "var(--gv-surface)", borderRight: "1px solid var(--gv-border)" }}
       >
+        <div className="flex items-center justify-end px-4 pt-4">
+          <ThemeToggle />
+        </div>
         <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
         <div className="px-4 py-2">
           <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
@@ -364,23 +380,27 @@ export function App() {
           <NodeDetail node={selectedNode ? getStoredNodes().find((n) => n.id === selectedNode) ?? null : null} />
         </div>
         <div className="px-4 pb-4 flex flex-col gap-2">
-          <label className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 cursor-pointer hover:bg-gray-700 transition-colors text-center block">
+          <label
+            className="w-full px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors text-center block hover:opacity-80"
+            style={{ background: "var(--gv-surface-raised)", border: "1px solid var(--gv-border)", color: "var(--gv-text-primary)" }}
+          >
             Load Different File
             <input type="file" accept=".json" onChange={handleFileLoad} disabled={layoutRunning} className="hidden" />
           </label>
           {manifestFiles.length > 0 && (
-            <div className="border-t border-gray-800 pt-2">
-              <p className="text-xs text-gray-500 mb-1">Quick load:</p>
+            <div className="pt-2" style={{ borderTop: "1px solid var(--gv-border)" }}>
+              <p className="text-xs mb-1" style={{ color: "var(--gv-text-secondary)" }}>Quick load:</p>
               {manifestFiles.map((f) => (
                 <button key={f} onClick={() => handleLoadFromData(f)}
-                  className="w-full text-left px-2 py-1 text-xs text-gray-400 hover:bg-gray-800 rounded font-mono transition-colors">
+                  className="w-full text-left px-2 py-1 text-xs rounded font-mono transition-colors hover:bg-[var(--gv-surface-raised)]"
+                  style={{ color: "var(--gv-text-secondary)" }}>
                   {f}
                 </button>
               ))}
             </div>
           )}
         </div>
-        {layoutRunning && <div className="px-4 pb-4 text-xs text-blue-400 animate-pulse">{loadingPhase || "Computing layout..."}</div>}
+        {layoutRunning && <div className="px-4 pb-4 text-xs animate-pulse" style={{ color: "var(--gv-accent)" }}>{loadingPhase || "Computing layout..."}</div>}
       </div>
       <div className="flex-1 relative">
         {revealLimit !== undefined && totalNodeCount > PROGRESSIVE_THRESHOLD && (
@@ -404,7 +424,7 @@ export function App() {
         {graph ? (
           <ForceGraph3DCanvas graph={graph} filters={debouncedFilters} onNodeClick={(nodeId) => setSelectedNode(nodeId)} selectedNodeId={selectedNode} focusNodeId={focusNode} onFocusHandled={() => setFocusNode(null)} revealLimit={revealLimit} />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm">Loading graph...</div>
+          <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: "var(--gv-text-secondary)" }}>Loading graph...</div>
         )}
       </div>
     </div>

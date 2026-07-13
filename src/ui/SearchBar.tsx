@@ -7,7 +7,8 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
   return (
     <div className="relative">
       <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500"
+        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+        style={{ color: "var(--gv-text-secondary)" }}
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"
@@ -25,9 +26,13 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search nodes..."
-        className="w-full pl-10 pr-3 py-2 bg-gray-800 border border-gray-700
-                   rounded-lg text-sm text-gray-200 placeholder-gray-500
-                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full pl-10 pr-3 py-2 rounded-lg text-sm
+                   focus:outline-none focus:ring-2 focus:ring-[var(--gv-accent)] focus:border-transparent"
+        style={{
+          background: "var(--gv-surface-raised)",
+          border: "1px solid var(--gv-border)",
+          color: "var(--gv-text-primary)",
+        }}
       />
     </div>
   );
