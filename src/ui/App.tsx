@@ -405,13 +405,17 @@ export function App() {
       style={{ background: "var(--gv-bg)", color: "var(--gv-text-primary)" }}
     >
       <div
-        className="flex flex-col w-72 shrink-0 overflow-y-auto"
+        className="flex flex-col w-72 shrink-0 h-screen min-h-0"
         style={{ background: "var(--gv-surface)", borderRight: "1px solid var(--gv-border)" }}
       >
-        <div className="flex items-center justify-end px-4 pt-4">
-          <ThemeToggle />
-        </div>
-        <div className="px-4 pt-3">
+        {/* Fixed header: title, theme, render controls. Always visible. */}
+        <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: "1px solid var(--gv-border)" }}>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h1 className="text-base font-bold leading-tight" style={{ color: "var(--gv-text-primary)" }}>
+              UGENT Graph Viewer
+            </h1>
+            <ThemeToggle />
+          </div>
           <RenderControls
             mode={renderMode}
             onModeChange={setRenderMode}
@@ -419,34 +423,40 @@ export function App() {
             onOrbitChange={setOrbit}
           />
         </div>
-        <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
-        <div className="px-4 py-2">
-          <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
+
+        {/* Scrollable middle: the single scroll region for all content. */}
+        <div className="flex-1 min-h-0 overflow-y-auto py-3">
+          <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
+          <div className="px-4 py-2">
+            <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
+          </div>
+          <div className="px-4 py-2">
+            <CommunityPanel
+              communities={communities}
+              selectedCommunities={filters.selectedCommunities}
+              onToggleCommunity={handleToggleCommunity}
+              onClearSelection={handleClearCommunitySelection}
+            />
+          </div>
+          <div className="px-4 py-2">
+            <StatsPanel
+              stats={stats}
+              visibleNodes={visibility.visibleNodes}
+              visibleEdges={visibility.visibleEdges}
+              hiddenByKind={visibility.hiddenByKind}
+              hiddenByCommunity={visibility.hiddenByCommunity}
+              hiddenBySearch={visibility.hiddenBySearch}
+              hiddenByCodebase={visibility.hiddenByCodebase}
+              isolatedHidden={isolatedHidden}
+            />
+          </div>
+          <div className="px-4 py-2">
+            <NodeDetail node={selectedNode ? getStoredNodes().find((n) => n.id === selectedNode) ?? null : null} />
+          </div>
         </div>
-        <div className="px-4 py-2">
-          <CommunityPanel
-            communities={communities}
-            selectedCommunities={filters.selectedCommunities}
-            onToggleCommunity={handleToggleCommunity}
-            onClearSelection={handleClearCommunitySelection}
-          />
-        </div>
-        <div className="px-4">
-          <StatsPanel
-            stats={stats}
-            visibleNodes={visibility.visibleNodes}
-            visibleEdges={visibility.visibleEdges}
-            hiddenByKind={visibility.hiddenByKind}
-            hiddenByCommunity={visibility.hiddenByCommunity}
-            hiddenBySearch={visibility.hiddenBySearch}
-            hiddenByCodebase={visibility.hiddenByCodebase}
-            isolatedHidden={isolatedHidden}
-          />
-        </div>
-        <div className="px-4 pb-4">
-          <NodeDetail node={selectedNode ? getStoredNodes().find((n) => n.id === selectedNode) ?? null : null} />
-        </div>
-        <div className="px-4 pb-4 flex flex-col gap-2">
+
+        {/* Fixed footer: load controls + status. Always reachable. */}
+        <div className="shrink-0 px-4 py-3 flex flex-col gap-2" style={{ borderTop: "1px solid var(--gv-border)" }}>
           <label
             className="w-full px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors text-center block hover:opacity-80"
             style={{ background: "var(--gv-surface-raised)", border: "1px solid var(--gv-border)", color: "var(--gv-text-primary)" }}
@@ -455,7 +465,7 @@ export function App() {
             <input type="file" accept=".json" onChange={handleFileLoad} disabled={layoutRunning} className="hidden" />
           </label>
           {manifestFiles.length > 0 && (
-            <div className="pt-2" style={{ borderTop: "1px solid var(--gv-border)" }}>
+            <div className="pt-2 max-h-24 overflow-y-auto" style={{ borderTop: "1px solid var(--gv-border)" }}>
               <p className="text-xs mb-1" style={{ color: "var(--gv-text-secondary)" }}>Quick load:</p>
               {manifestFiles.map((f) => (
                 <button key={f} onClick={() => handleLoadFromData(f)}
@@ -466,8 +476,8 @@ export function App() {
               ))}
             </div>
           )}
+          {layoutRunning && <div className="text-xs animate-pulse" style={{ color: "var(--gv-accent)" }}>{loadingPhase || "Computing layout..."}</div>}
         </div>
-        {layoutRunning && <div className="px-4 pb-4 text-xs animate-pulse" style={{ color: "var(--gv-accent)" }}>{loadingPhase || "Computing layout..."}</div>}
       </div>
       <div className="flex-1 relative">
         {revealLimit !== undefined && totalNodeCount > PROGRESSIVE_THRESHOLD && (

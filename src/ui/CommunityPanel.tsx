@@ -37,7 +37,7 @@ export function CommunityPanel({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+      <div className="flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: "clamp(8rem, 22vh, 20rem)" }}>
         {communities.map((c) => {
           const active =
             selectedCommunities.size === 0 ||

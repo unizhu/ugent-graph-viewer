@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { currentTheme, subscribeTheme, toggleTheme, type GraphTheme } from "../theme/theme";
+import { SunIcon, MoonIcon } from "./icons";
 
 // Subscribe React to the module-level theme store so the whole tree (sidebar
 // chrome and the canvas, which read `currentTheme()` at render) re-renders on
@@ -34,7 +35,7 @@ export function ThemeToggle() {
         color: "var(--gv-text-secondary)",
       }}
     >
-      <span aria-hidden="true">{isDark ? "🌙" : "☀️"}</span>
+      {isDark ? <MoonIcon size={14} /> : <SunIcon size={14} />}
       <span>{isDark ? "Dark" : "Light"}</span>
     </button>
   );

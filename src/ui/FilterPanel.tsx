@@ -54,14 +54,7 @@ export function FilterPanel({
   const allEdgeRelations = Object.keys(stats.edges_by_relation) as EdgeRelation[];
 
   return (
-    <div
-      className="w-72 p-4 flex flex-col gap-4 overflow-y-auto"
-      style={{ background: "var(--gv-surface)", borderRight: "1px solid var(--gv-border)" }}
-    >
-      <h1 className="text-lg font-bold" style={{ color: "var(--gv-text-primary)" }}>
-        UGENT Graph Viewer
-      </h1>
-
+    <div className="px-4 pt-2 flex flex-col gap-4">
       {/* Codebase selector */}
       <div>
         <label
