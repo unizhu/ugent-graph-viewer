@@ -1,0 +1,37 @@
+# Caddyfile for ugent-graph-viewer (static SPA)
+#
+# Caddy auto-provisions TLS. Serves the Vite `dist/` build staged at
+# /opt/ugent/viewer. The viewer is client-side only, no backend, no secrets.
+#
+# Use with deploy/caddy/ugent-graph-viewer-caddy.service, or run:
+#   caddy run --config deploy/caddy/Caddyfile --adapter caddyfile
+#
+# Replace graph.example.com with your domain (and set an email for ACME
+# via the global options block or CADDY_* env if desired).
+
+graph.example.com {
+	root * /opt/ugent/viewer
+	encode gzip zstd
+
+	# Security headers. NOTE: intentionally NO Cross-Origin-Opener-Policy -
+	# the viewer needs window.opener for the postMessage handshake to the
+	# console; a restrictive COOP would break the handoff.
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Long-cache fingerprinted Vite assets.
+	@assets path /assets/*
+	header @assets Cache-Control "public, immutable, max-age=31536000"
+
+	# Don't cache the HTML shell.
+	@html path / /index.html
+	header @html Cache-Control "no-cache"
+
+	# SPA fallback (deep links use ?node=, but this covers all paths).
+	try_files {path} {path}/ /index.html
+	file_server
+}

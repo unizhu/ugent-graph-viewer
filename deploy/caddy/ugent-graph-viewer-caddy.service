@@ -1,0 +1,65 @@
+# ugent-graph-viewer served by Caddy, running as the low-privilege ugent user.
+#
+# Use this INSTEAD of nginx if you prefer Caddy (auto-TLS). If you use the
+# distro's own caddy.service, you don't need this unit - just point that at
+# deploy/caddy/Caddyfile. This unit is for running a dedicated ugent-owned
+# Caddy bound to the viewer only.
+#
+# Binding to :443 as a non-root user requires the capability below; that is
+# the ONLY privilege granted.
+
+[Unit]
+Description=UGent Graph Viewer (Caddy static server)
+Documentation=https://github.com/zhug17_roche/ugent-graph-viewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=ugent
+Group=ugent
+UMask=0077
+
+ExecStart=/usr/bin/caddy run --environ --config /etc/ugent/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/ugent/Caddyfile --adapter caddyfile --force
+
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+# Caddy needs a writable data dir for ACME certs/state.
+Environment=XDG_DATA_HOME=/var/lib/ugent-caddy
+Environment=XDG_CONFIG_HOME=/var/lib/ugent-caddy
+
+# --- Hardening ---
+# Bind low ports (80/443) as non-root via a single capability, nothing more.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Only ACME state + the read-only site root need to be reachable for writes.
+ReadWritePaths=/var/lib/ugent-caddy
+# Site root stays read-only (Caddy only reads it).
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
