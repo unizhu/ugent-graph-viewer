@@ -28,7 +28,10 @@ export function StatsPanel({
     hiddenByCodebase > 0 ||
     isolatedHidden > 0;
 
-  const cardStyle = { background: "var(--gv-surface-raised)" };
+  const cardStyle = {
+    background: "var(--gv-surface-raised)",
+    border: "1px solid var(--gv-border)",
+  };
   const labelStyle = { color: "var(--gv-text-secondary)" };
   const valueStyle = { color: "var(--gv-text-primary)" };
 
