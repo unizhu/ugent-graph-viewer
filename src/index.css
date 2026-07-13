@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+/*
+ * Theme CSS variables. Seeded with the dark fallback here so the app has a
+ * sane look before a console handoff arrives; `applyTheme()` (see
+ * src/theme/theme.ts) overwrites them at runtime from the handoff payload.
+ * Components reference these via inline styles / Tailwind arbitrary values
+ * so a theme swap re-tints the whole chrome with no prop drilling.
+ */
+:root {
+  --gv-bg: #09090b;
+  --gv-surface: #18181b;
+  --gv-surface-raised: #27272a;
+  --gv-border: #27272a;
+  --gv-text-primary: #fafafa;
+  --gv-text-secondary: #a1a1aa;
+  --gv-accent: #16b981;
+  --gv-accent-foreground: #062017;
+}
+
+html,
+body {
+  background: var(--gv-bg);
+  color: var(--gv-text-primary);
+}

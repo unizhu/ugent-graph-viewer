@@ -1,14 +1,25 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from "react";
 import ForceGraph3D from "react-force-graph-3d";
 import Graph from "graphology";
-import type { FilterState, NodeKind, EdgeRelation } from "../types";
-import { NODE_KIND_COLORS, EDGE_RELATION_COLORS } from "../types";
+import type { FilterState, NodeKind } from "../types";
+import { nodeKindColor, edgeRelationColor, currentTheme } from "../theme/theme";
 
 interface ForceGraph3DProps {
   graph: Graph;
   filters: FilterState;
   onNodeClick: (nodeId: string) => void;
   selectedNodeId: string | null;
+  /** Deep-link / handoff focus target; the camera flies to it once (R13). */
+  focusNodeId?: string | null;
+  /** Called after a focus request has been handled so it fires only once. */
+  onFocusHandled?: () => void;
+  /**
+   * Progressive loading cap (R18). When set, only the top-`revealLimit`
+   * nodes by degree are rendered; the parent ramps this up so large graphs
+   * appear incrementally into the same ForceGraph3D instance rather than
+   * blocking on the full set. `undefined`/`Infinity` renders everything.
+   */
+  revealLimit?: number;
 }
 
 /**
@@ -48,6 +59,29 @@ function shouldHideNode(filters: FilterState, data: {
 }
 
 /**
+ * Cap a built {nodes, links} set to the top-`limit` nodes by degree,
+ * dropping links whose endpoints fall outside the kept set. Used for
+ * progressive loading (R18): the highest-degree nodes are the structural
+ * backbone, so revealing them first keeps early frames meaningful.
+ */
+function capByDegree(
+  data: { nodes: any[]; links: any[] },
+  limit: number,
+): { nodes: any[]; links: any[] } {
+  if (!Number.isFinite(limit) || data.nodes.length <= limit) return data;
+  const kept = [...data.nodes]
+    .sort((a, b) => (b.degree || 0) - (a.degree || 0))
+    .slice(0, limit);
+  const keptIds = new Set(kept.map((n) => n.id));
+  const links = data.links.filter((l) => {
+    const src = typeof l.source === "object" ? l.source.id : l.source;
+    const tgt = typeof l.target === "object" ? l.target.id : l.target;
+    return keptIds.has(src) && keptIds.has(tgt);
+  });
+  return { nodes: kept, links };
+}
+
+/**
  * Build node and link arrays at the symbol level (default mode).
  */
 function buildSymbolGraphData(graph: Graph, filters: FilterState) {
@@ -65,7 +99,7 @@ function buildSymbolGraphData(graph: Graph, filters: FilterState) {
     });
     if (isHidden) return;
 
-    const color = attrs.color || NODE_KIND_COLORS[attrs.kind as NodeKind] || "#6b7280";
+    const color = attrs.color || nodeKindColor(attrs.kind as NodeKind);
     const nodeObj = {
       id: nodeId,
       label: attrs.label || nodeId,
@@ -90,7 +124,7 @@ function buildSymbolGraphData(graph: Graph, filters: FilterState) {
       target: target,
       relation: attrs.relation,
       confidence: attrs.confidence ?? 0.5,
-      color: EDGE_RELATION_COLORS[attrs.relation as EdgeRelation] || "#374151",
+      color: edgeRelationColor(attrs.relation),
     });
   });
 
@@ -142,7 +176,7 @@ function buildAggregatedGraphData(graph: Graph, filters: FilterState) {
         codebaseId,
         filePath,
         degree: attrs.degree || 0,
-        color: NODE_KIND_COLORS.file,
+        color: nodeKindColor("file"),
         communityId: attrs.communityId,
         childCount: 1,
       });
@@ -168,14 +202,14 @@ function buildAggregatedGraphData(graph: Graph, filters: FilterState) {
       target: tgtKey,
       relation: attrs.relation,
       confidence: attrs.confidence ?? 0.5,
-      color: EDGE_RELATION_COLORS[attrs.relation as EdgeRelation] || "#374151",
+      color: edgeRelationColor(attrs.relation),
     });
   });
 
   return { nodes: Array.from(fileNodes.values()), links };
 }
 
-export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId }: ForceGraph3DProps) {
+export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId, focusNodeId, onFocusHandled, revealLimit }: ForceGraph3DProps) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -227,13 +261,15 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
     };
   }, []);
 
-  // Convert Graphology structure to react-force-graph-3d nodes/links format
+  // Convert Graphology structure to react-force-graph-3d nodes/links format.
+  // A finite revealLimit caps the rendered set for progressive loading (R18).
   const graphData = useMemo(() => {
-    if (filters.aggregateMode) {
-      return buildAggregatedGraphData(graph, filters);
-    }
-    return buildSymbolGraphData(graph, filters);
-  }, [graph, filters]);
+    const full = filters.aggregateMode
+      ? buildAggregatedGraphData(graph, filters)
+      : buildSymbolGraphData(graph, filters);
+    if (revealLimit === undefined || !Number.isFinite(revealLimit)) return full;
+    return capByDegree(full, revealLimit);
+  }, [graph, filters, revealLimit]);
 
   // Handle node hover to highlight first-hop neighbors and links
   const handleNodeHover = useCallback((node: any) => {
@@ -295,6 +331,49 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
     onNodeClick(node.id);
   }, [onNodeClick]);
 
+  // Deep-link / handoff focus (R13): when a focusNodeId is provided, fly the
+  // camera to that node once the force layout has settled enough to give it
+  // coordinates, select it, then clear the request so it fires only once.
+  useEffect(() => {
+    if (!focusNodeId) return;
+    let cancelled = false;
+    let attempts = 0;
+
+    const tryFocus = () => {
+      if (cancelled) return;
+      attempts += 1;
+      const node = fgRef.current
+        ?.graphData?.()
+        ?.nodes?.find((n: any) => n.id === focusNodeId);
+      const positioned = node && (node.x !== undefined || node.z !== undefined);
+      if (positioned) {
+        const distance = 80;
+        const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+        fgRef.current?.cameraPosition(
+          { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
+          node,
+          1500,
+        );
+        onNodeClick(node.id);
+        onFocusHandled?.();
+        return;
+      }
+      // The layout may not have positioned nodes yet; retry briefly, then
+      // give up (unknown id or filtered-out node) without erroring.
+      if (attempts < 40) {
+        window.setTimeout(tryFocus, 100);
+      } else {
+        onFocusHandled?.();
+      }
+    };
+
+    const start = window.setTimeout(tryFocus, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(start);
+    };
+  }, [focusNodeId, onNodeClick, onFocusHandled]);
+
   // Auto-orbit camera when user is idle, recovering smoothly from user interactions
   useEffect(() => {
     if (!fgRef.current) return;
@@ -328,12 +407,20 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
     return () => clearInterval(interval);
   }, [hoveredNode, selectedNodeId, userInteracted]);
 
+  // Theme-derived canvas chrome. The graph loads after the handoff has
+  // applied the theme, so reading the active tokens at render is correct.
+  const theme = currentTheme();
+  const canvasBg =
+    theme.theme === "light"
+      ? `radial-gradient(circle, ${theme.tokens.surface} 0%, ${theme.tokens.background} 100%)`
+      : `radial-gradient(circle, ${theme.tokens.surfaceRaised} 0%, ${theme.tokens.background} 100%)`;
+
   return (
     <div 
       ref={containerRef}
       className="w-full h-full relative"
       style={{
-        background: "radial-gradient(circle, #111827 0%, #030712 100%)"
+        background: canvasBg,
       }}
       onMouseDown={handleUserInteraction}
       onTouchStart={handleUserInteraction}
@@ -358,11 +445,12 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
           nodeVal={node => Math.min(18, 2 + Math.log2(node.degree + 1) * 3)}
           nodeResolution={6} // Lower resolution = faster WebGL performance
           
-          // HTML tooltips with Glassmorphism styles
+          // HTML tooltips, themed from the active token set so they match
+          // the console's light/dark choice.
           nodeLabel={node => `
             <div style="
-              background: rgba(17, 24, 39, 0.95);
-              border: 1px solid rgba(255, 255, 255, 0.1);
+              background: ${theme.tokens.surfaceRaised};
+              border: 1px solid ${theme.tokens.border};
               border-radius: 8px;
               padding: 8px 12px;
               box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
@@ -372,14 +460,14 @@ export function ForceGraph3DCanvas({ graph, filters, onNodeClick, selectedNodeId
             ">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                 <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${node.color};"></span>
-                <span style="font-weight: 700; color: #f9fafb; font-size: 13px;">${node.label}</span>
+                <span style="font-weight: 700; color: ${theme.tokens.textPrimary}; font-size: 13px;">${node.label}</span>
               </div>
-              <div style="font-size: 11px; color: #d1d5db; margin-bottom: 4px;">
-                <span style="color: #9ca3af; font-weight: 500;">Kind:</span> 
-                <span style="font-family: monospace; background: rgba(255, 255, 255, 0.08); padding: 1px 4px; border-radius: 4px; color: #60a5fa;">${node.kind}</span>
+              <div style="font-size: 11px; color: ${theme.tokens.textSecondary}; margin-bottom: 4px;">
+                <span style="color: ${theme.tokens.textSecondary}; font-weight: 500;">Kind:</span> 
+                <span style="font-family: monospace; background: ${theme.tokens.surface}; padding: 1px 4px; border-radius: 4px; color: ${theme.tokens.accent};">${node.kind}</span>
               </div>
               ${node.filePath ? `
-                <div style="font-size: 10px; color: #9ca3af; font-family: monospace; word-break: break-all; border-top: 1px solid rgba(255, 255, 255, 0.08); pt: 4px; margin-top: 4px;">
+                <div style="font-size: 10px; color: ${theme.tokens.textSecondary}; font-family: monospace; word-break: break-all; border-top: 1px solid ${theme.tokens.border}; padding-top: 4px; margin-top: 4px;">
                   ${node.filePath}
                 </div>
               ` : ""}

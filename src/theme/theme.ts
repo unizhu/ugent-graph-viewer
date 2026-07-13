@@ -1,0 +1,159 @@
+// Theme received from the console handoff. Mirrors the payload built by
+// the console's `src/lib/graph/theme-payload.ts`: a resolved theme name,
+// core chrome tokens, and the per-node-kind palette. The viewer applies
+// the tokens to CSS variables (see `applyTheme`) and reads the kind hues
+// through `nodeKindColor`, so light/dark rendering matches the console the
+// user launched from.
+
+import type { NodeKind } from "../types";
+
+export type GraphTheme = "light" | "dark";
+
+export interface GraphThemeTokens {
+  background: string;
+  surface: string;
+  surfaceRaised: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+  accent: string;
+  accentForeground: string;
+}
+
+export interface GraphKindPalette {
+  file: string;
+  module: string;
+  struct: string;
+  enum: string;
+  function: string;
+  trait: string;
+  type_alias: string;
+  constant: string;
+  impl: string;
+  block: string;
+}
+
+export interface GraphThemePayload {
+  theme: GraphTheme;
+  tokens: GraphThemeTokens;
+  kinds: GraphKindPalette;
+}
+
+// Fallback dark theme used when the viewer is opened directly (file load
+// or ?data=) with no console handoff. Values mirror the console's dark
+// tokens so a standalone open still looks intentional rather than raw.
+const FALLBACK_DARK: GraphThemePayload = {
+  theme: "dark",
+  tokens: {
+    background: "#09090b",
+    surface: "#18181b",
+    surfaceRaised: "#27272a",
+    border: "#27272a",
+    textPrimary: "#fafafa",
+    textSecondary: "#a1a1aa",
+    accent: "#16b981",
+    accentForeground: "#062017",
+  },
+  kinds: {
+    file: "#6b7280",
+    module: "#8b5cf6",
+    struct: "#3b82f6",
+    enum: "#06b6d4",
+    function: "#10b981",
+    trait: "#f59e0b",
+    type_alias: "#ec4899",
+    constant: "#f97316",
+    impl: "#14b8a6",
+    block: "#4b5563",
+  },
+};
+
+// Light fallback, used only if a handoff sends theme:"light" without a
+// full token set (defensive; the console always sends complete tokens).
+const FALLBACK_LIGHT_TOKENS: GraphThemeTokens = {
+  background: "#fafafa",
+  surface: "#ffffff",
+  surfaceRaised: "#ffffff",
+  border: "#e4e4e7",
+  textPrimary: "#18181b",
+  textSecondary: "#52525b",
+  accent: "#0f9b6c",
+  accentForeground: "#fcfcfc",
+};
+
+let current: GraphThemePayload = FALLBACK_DARK;
+
+/** The theme currently applied (defaults to dark until a handoff arrives). */
+export function currentTheme(): GraphThemePayload {
+  return current;
+}
+
+/** Narrow-validate an untrusted `theme` field from a postMessage payload. */
+export function isThemePayload(value: unknown): value is GraphThemePayload {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.theme !== "light" && v.theme !== "dark") return false;
+  if (!v.tokens || typeof v.tokens !== "object") return false;
+  if (!v.kinds || typeof v.kinds !== "object") return false;
+  return true;
+}
+
+/**
+ * Apply a theme: store it and write the core tokens onto CSS variables on
+ * `:root` (`--gv-bg`, `--gv-surface`, ...). Components read these vars via
+ * Tailwind arbitrary values / inline styles so a theme change re-tints the
+ * whole chrome without prop drilling. Also toggles a `light`/`dark` class
+ * for any class-based styling.
+ */
+export function applyTheme(payload: GraphThemePayload): void {
+  // Merge onto the matching fallback so a partial payload never leaves a
+  // token undefined (which would blank a surface).
+  const base = payload.theme === "light" ? { ...FALLBACK_DARK.tokens, ...FALLBACK_LIGHT_TOKENS } : FALLBACK_DARK.tokens;
+  const tokens: GraphThemeTokens = { ...base, ...payload.tokens };
+  const kinds: GraphKindPalette = { ...FALLBACK_DARK.kinds, ...payload.kinds };
+  current = { theme: payload.theme, tokens, kinds };
+
+  const root = document.documentElement;
+  const map: Record<string, string> = {
+    "--gv-bg": tokens.background,
+    "--gv-surface": tokens.surface,
+    "--gv-surface-raised": tokens.surfaceRaised,
+    "--gv-border": tokens.border,
+    "--gv-text-primary": tokens.textPrimary,
+    "--gv-text-secondary": tokens.textSecondary,
+    "--gv-accent": tokens.accent,
+    "--gv-accent-foreground": tokens.accentForeground,
+  };
+  for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v);
+  root.classList.toggle("dark", current.theme === "dark");
+  root.classList.toggle("light", current.theme === "light");
+}
+
+/** Per-kind node color from the active theme palette. */
+export function nodeKindColor(kind: NodeKind): string {
+  return current.kinds[kind as keyof GraphKindPalette] ?? current.kinds.file;
+}
+
+/**
+ * Edge relation color. The console payload carries node-kind hues only;
+ * edges reuse those same hues by a stable relation->kind-slot mapping so
+ * edge colors track the theme without a second palette in the payload.
+ */
+const EDGE_HUE_SLOT: Record<string, keyof GraphKindPalette> = {
+  imports: "module",
+  calls: "function",
+  defines: "struct",
+  contains: "file",
+  references: "trait",
+  implements: "impl",
+  depends_on: "type_alias",
+  documented_by: "enum",
+  tested_by: "constant",
+  similar_to: "impl",
+  related_to: "trait",
+};
+
+export function edgeRelationColor(relation: string): string {
+  const slot = EDGE_HUE_SLOT[relation];
+  return slot ? current.kinds[slot] : current.tokens.border;
+}

@@ -44,7 +44,8 @@ export function loadGraph(
       lineRange: node.line_range,
       communityId: node.community_id,
       degree: 0,
-      // Initialize random positions so Sigma can render immediately.
+      // Initialize random positions so the 3D renderer can place nodes
+      // immediately before the force layout settles.
       // Layout will overwrite these with computed positions.
       x: Math.random() * 1000,
       y: Math.random() * 1000,

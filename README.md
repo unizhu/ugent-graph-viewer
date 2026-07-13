@@ -1,61 +1,117 @@
 # UGENT Graph Viewer
 
-Interactive WebGL visualization for the ugent-context-engine knowledge graph.
+Interactive 3D WebGL visualization for the ugent-context-engine knowledge
+graph. Renders an `ExportViewport` as a force-directed graph you can filter,
+search, and inspect.
 
-Lives as a git submodule at `viewers/graph-viewer/` in the main engine repo.
+The viewer runs two ways:
 
-## Quick Start
+- **From the tenant console (primary).** The console's Codebases page has a
+  **View graph** button that opens this app in a new tab and hands off a
+  short-lived, single-use session over an origin-checked `postMessage`
+  handshake. The viewer never holds an engine credential; the console
+  proxies the graph export with its sealed key. See "Console handoff" below.
+- **Standalone (local dev / debugging).** Load an exported JSON file
+  directly, no console required.
 
-### 1. Export your graph
+## Quick start (standalone)
 
-Use MCP tools to export a graph JSON file:
+### 1. Export a graph
+
+Use the engine's MCP tools to export a graph JSON file:
 
 ```
 graph_list_codebases                    # discover codebase IDs
-graph_export codebase_id="my-project"  # export filtered graph
+graph_export codebase_id="my-project"   # export a filtered graph
 ```
 
-Save the `data` field from the JSON-RPC response as `my-graph.json`.
+Save the `data` field of the JSON-RPC response as `my-graph.json`.
 
 ### 2. Run the viewer
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-Open http://localhost:5180, click "Load Graph JSON", select your file.
+Open the dev URL, click **Load Graph JSON**, and select your file. You can
+also deep-link a node with `?node=<node_id>` — the camera flies to it once
+the layout settles.
+
+## Console handoff
+
+When opened from the console, the viewer completes this handshake:
+
+1. On load (with a `window.opener`), the viewer posts `graph-viewer:ready`
+   to the opener.
+2. The console replies with `graph-viewer:handoff` carrying a single-use
+   token, the console origin, the codebase id, the resolved theme (tokens +
+   per-kind palette), and an optional focus node. The viewer validates that
+   the message origin matches the claimed console origin.
+3. The viewer redeems the token **once** at
+   `{consoleOrigin}/api/graph/redeem` for a short-lived HMAC-signed data
+   URL, then fetches it to load the `ExportViewport`.
+4. On tab close the viewer beacons `{consoleOrigin}/api/graph/close`
+   (`text/plain`, so no preflight) to revoke the session.
+
+If a token expires and the opener is still open, the viewer re-requests a
+fresh handoff automatically; otherwise it shows a "reopen from the console"
+state. See the console's `docs/plans/phase-5-graph-viewer-handoff.md` for
+the full contract.
+
+### Theme
+
+The viewer has no theme of its own — it applies the tokens and per-kind
+palette from the handoff payload onto CSS variables (`src/theme/theme.ts`),
+so it matches whatever light/dark theme the user chose in the console. When
+run standalone it falls back to a dark theme.
 
 ## Features
 
-- **Codebase selector** -- switch between indexed codebases
-- **Node kind filters** -- toggle File, Module, Function, Struct, Enum, Trait, Block
-- **Edge relation filters** -- toggle Imports, Calls, Contains, References, etc.
-- **Search** -- filter visible nodes by name or file path
-- **Community clusters** -- nodes colored by community detection
-- **Hover highlighting** -- neighbors highlighted on hover
-- **Click-to-inspect** -- node detail panel shows file, line range, community
-- **Zoom/pan** -- mouse wheel + drag
+- **3D force-directed canvas** with auto-orbit, hover neighbor highlighting,
+  and click-to-focus.
+- **Node kind / edge relation filters**, name/path **search**, and
+  **community clustering** (Louvain).
+- **Node inspector** — kind, id, file, line range, codebase, community.
+- **Progressive loading** — graphs above a node-count threshold reveal in
+  batches (highest-degree first) with a live node-count notice, so large
+  tenant graphs stay responsive. Constants live in `src/ui/App.tsx`.
+- **Deep-linking** via `?node=<id>` and via the handoff focus node.
 
-## Tech Stack
+## Tech stack
 
-| Library | Version | Purpose |
-|---------|---------|---------|
-| Sigma.js | 3.0.3 | WebGL graph renderer |
-| Graphology | 0.26.0 | Graph data structure |
-| ForceAtlas2 | 0.10.1 | Force-directed layout |
-| React | 19.2.5 | UI framework |
-| Vite | 8.0.10 | Build tool |
-| Tailwind CSS | 4.2.4 | Styling |
-| TypeScript | 6.0.3 | Type safety |
+| Library | Purpose |
+|---------|---------|
+| react-force-graph-3d + three | 3D WebGL graph renderer |
+| Graphology (+ louvain, forceatlas2, noverlap) | Graph structure, communities, layout |
+| React | UI framework |
+| Vite | Build tool |
+| Tailwind CSS | Styling |
+| TypeScript | Type safety |
 
 ## Architecture
 
 ```
-Rust export (graph_export MCP tool)
-  --> JSON file (ExportViewport)
-    --> Graphology graph instance
-      --> Sigma.js WebGL renderer
+Engine export (graph_export)  ──▶  ExportViewport JSON
+                                        │
+        console handoff  ──────────────┤  (or standalone file load)
+                                        ▼
+                            Graphology graph instance
+                                        │
+                                        ▼
+                     react-force-graph-3d (three.js) canvas
 ```
 
-The viewer is a pure client-side app -- no server needed. Load a static JSON file and explore.
+The viewer is a client-side app. Graph data arrives either from the console
+handoff (redeem → signed URL → fetch) or a local file; there is no viewer
+backend.
+
+## Security notes
+
+- The viewer holds **no engine credential**. Handoff tokens are single-use
+  and short-lived; the console proxies the actual engine export.
+- All `postMessage` exchanges are origin-checked on both ends.
+- No `localStorage`/`sessionStorage` and no tokens in the URL.
+- File-snippet fetching is **out of scope** for v1 (there is no console
+  proxy route for it); the previous in-browser engine-token input was
+  removed.
