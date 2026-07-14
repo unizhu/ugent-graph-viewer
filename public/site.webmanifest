@@ -1,0 +1,14 @@
+{
+  "name": "UGENT Graph Viewer",
+  "short_name": "Graph Viewer",
+  "description": "Interactive explorer for UGENT Context Engine knowledge graphs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#16b981",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
