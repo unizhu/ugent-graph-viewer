@@ -7,7 +7,7 @@ interface StatsPanelProps {
   hiddenByKind?: number;
   hiddenByCommunity?: number;
   hiddenBySearch?: number;
-  hiddenByCodebase?: number;
+  hiddenByWorkspace?: number;
   isolatedHidden?: number;
 }
 
@@ -18,14 +18,14 @@ export function StatsPanel({
   hiddenByKind = 0,
   hiddenByCommunity = 0,
   hiddenBySearch = 0,
-  hiddenByCodebase = 0,
+  hiddenByWorkspace = 0,
   isolatedHidden = 0,
 }: StatsPanelProps) {
   const showHiddenBreakdown =
     hiddenByKind > 0 ||
     hiddenByCommunity > 0 ||
     hiddenBySearch > 0 ||
-    hiddenByCodebase > 0 ||
+    hiddenByWorkspace > 0 ||
     isolatedHidden > 0;
 
   const cardStyle = {
@@ -88,10 +88,10 @@ export function StatsPanel({
                 <span className="text-amber-500 font-mono">{hiddenBySearch}</span>
               </div>
             )}
-            {hiddenByCodebase > 0 && (
+            {hiddenByWorkspace > 0 && (
               <div className="rounded px-2 py-1" style={cardStyle}>
-                <span style={labelStyle}>by codebase</span>{" "}
-                <span className="text-amber-500 font-mono">{hiddenByCodebase}</span>
+                <span style={labelStyle}>by workspace</span>{" "}
+                <span className="text-amber-500 font-mono">{hiddenByWorkspace}</span>
               </div>
             )}
           </div>

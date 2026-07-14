@@ -91,7 +91,7 @@ export function GraphCanvas({
       graph,
       revealLimit,
       filters.aggregateMode,
-      filters.codebaseId,
+      filters.workspaceId,
       filters.searchQuery,
       filters.searchRegex,
       filters.nodeKinds,

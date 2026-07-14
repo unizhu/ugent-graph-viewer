@@ -112,7 +112,7 @@ export function classifyZoom(ratio: number): ZoomLevel {
 
 // Filter state for the UI.
 export interface FilterState {
-  codebaseId: string | null;
+  workspaceId: string | null;
   nodeKinds: Set<NodeKind>;
   edgeRelations: Set<EdgeRelation>;
   searchQuery: string;
@@ -134,7 +134,7 @@ export interface VisibilityCounts {
   hiddenByKind: number;
   hiddenByCommunity: number;
   hiddenBySearch: number;
-  hiddenByCodebase: number;
+  hiddenByWorkspace: number;
 }
 
 // Node-kind and edge-relation colors now live in the theme module

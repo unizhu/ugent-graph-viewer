@@ -47,7 +47,7 @@ export function NodeDetail({ node }: NodeDetailProps) {
         <Field label="ID" value={node.id} mono breakAll />
         <Field label="File" value={node.file_path} mono breakAll />
         <Field label="Lines" value={`${node.line_range[0]}-${node.line_range[1]}`} mono />
-        <Field label="Codebase" value={node.codebase_id} mono />
+        <Field label="Workspace" value={node.codebase_id} mono />
         {node.community_id != null && (
           <Field label="Community" value={String(node.community_id)} mono />
         )}

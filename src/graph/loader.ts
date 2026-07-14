@@ -39,7 +39,7 @@ export function loadGraph(
     graph.addNode(node.id, {
       label: node.name,
       kind: node.kind,
-      codebaseId: node.codebase_id,
+      workspaceId: node.codebase_id,
       filePath: node.file_path,
       lineRange: node.line_range,
       communityId: node.community_id,

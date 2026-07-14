@@ -11,7 +11,7 @@ export interface RenderNode {
   id: string;
   label: string;
   kind: string;
-  codebaseId: string;
+  workspaceId: string;
   filePath: string;
   degree: number;
   color: string;
@@ -40,13 +40,13 @@ function shouldHideNode(
   data: {
     label: string;
     kind: string;
-    codebaseId: string;
+    workspaceId: string;
     filePath: string;
     degree: number;
     communityId: number | null;
   },
 ): boolean {
-  if (filters.codebaseId && data.codebaseId !== filters.codebaseId) {
+  if (filters.workspaceId && data.workspaceId !== filters.workspaceId) {
     return true;
   }
   if (filters.nodeKinds.size > 0 && !filters.nodeKinds.has(data.kind as NodeKind)) {
@@ -95,7 +95,7 @@ export function buildSymbolGraphData(graph: Graph, filters: FilterState): Render
     const isHidden = shouldHideNode(filters, matcher, {
       label: attrs.label || nodeId,
       kind: attrs.kind,
-      codebaseId: attrs.codebaseId,
+      workspaceId: attrs.workspaceId,
       filePath: attrs.filePath,
       degree: attrs.degree || 0,
       communityId: attrs.communityId,
@@ -107,7 +107,7 @@ export function buildSymbolGraphData(graph: Graph, filters: FilterState): Render
       id: nodeId,
       label: attrs.label || nodeId,
       kind: attrs.kind,
-      codebaseId: attrs.codebaseId,
+      workspaceId: attrs.workspaceId,
       filePath: attrs.filePath,
       degree: attrs.degree || 0,
       color,
@@ -136,13 +136,13 @@ export function buildSymbolGraphData(graph: Graph, filters: FilterState): Render
 
 /**
  * Build a file-level macro view: collapse symbol-level nodes onto their parent
- * file node (keyed by codebaseId::filePath) and dedupe edges by
+ * file node (keyed by workspaceId::filePath) and dedupe edges by
  * (source_file, target_file, relation). Edges where source and target share
  * the same file are dropped (intra-file noise).
  */
 export function buildAggregatedGraphData(graph: Graph, filters: FilterState): RenderGraphData {
-  const fileKey = (codebaseId: string, filePath: string) =>
-    `${codebaseId || ""}::${filePath || ""}`;
+  const fileKey = (workspaceId: string, filePath: string) =>
+    `${workspaceId || ""}::${filePath || ""}`;
 
   const fileNodes = new Map<string, RenderNode>();
   const idToFileKey = new Map<string, string>();
@@ -152,7 +152,7 @@ export function buildAggregatedGraphData(graph: Graph, filters: FilterState): Re
     const isHidden = shouldHideNode(filters, matcher, {
       label: attrs.label || nodeId,
       kind: attrs.kind,
-      codebaseId: attrs.codebaseId,
+      workspaceId: attrs.workspaceId,
       filePath: attrs.filePath,
       degree: attrs.degree || 0,
       communityId: attrs.communityId,
@@ -160,8 +160,8 @@ export function buildAggregatedGraphData(graph: Graph, filters: FilterState): Re
     if (isHidden) return;
     const filePath: string = attrs.filePath || "";
     if (!filePath) return;
-    const codebaseId: string = attrs.codebaseId || "";
-    const key = fileKey(codebaseId, filePath);
+    const workspaceId: string = attrs.workspaceId || "";
+    const key = fileKey(workspaceId, filePath);
     idToFileKey.set(nodeId, key);
 
     const existing = fileNodes.get(key);
@@ -174,7 +174,7 @@ export function buildAggregatedGraphData(graph: Graph, filters: FilterState): Re
         id: key,
         label: fileLabel,
         kind: "file",
-        codebaseId,
+        workspaceId,
         filePath,
         degree: attrs.degree || 0,
         color: nodeKindColor("file"),

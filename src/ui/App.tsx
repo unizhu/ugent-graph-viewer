@@ -83,12 +83,12 @@ export function App() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [layoutRunning, setLayoutRunning] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<string>("");
-  const [codebases, setCodebases] = useState<CodebaseSummary[]>([]);
+  const [workspaces, setWorkspaces] = useState<CodebaseSummary[]>([]);
   const [stats, setStats] = useState<ExportStats | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [communities, setCommunities] = useState<CommunityInfo[]>([]);
   const [filters, setFilters] = useState<FilterState>({
-    codebaseId: null,
+    workspaceId: null,
     nodeKinds: new Set(DEFAULT_NODE_KINDS),
     edgeRelations: new Set(),
     searchQuery: "",
@@ -166,7 +166,7 @@ export function App() {
       // Assign community colors based on detected communityIds.
       const communityColors = assignCommunityColors(g);
 
-      setCodebases(viewport.codebases);
+      setWorkspaces(viewport.codebases);
       setStats(viewport.stats);
       setSelectedNode(null);
       graphRef.current = g;
@@ -175,7 +175,7 @@ export function App() {
       // repos; for documents-only exports, pickDefaultKinds falls back to the
       // kinds actually present so the canvas isn't blank on first load.
       setFilters({
-        codebaseId: null,
+        workspaceId: null,
         nodeKinds: pickDefaultKinds(viewport),
         edgeRelations: new Set(),
         searchQuery: "",
@@ -336,7 +336,7 @@ export function App() {
         hiddenByKind: 0,
         hiddenByCommunity: 0,
         hiddenBySearch: 0,
-        hiddenByCodebase: 0,
+        hiddenByWorkspace: 0,
       };
     }
     return countVisible(graphRef.current, debouncedFilters);
@@ -428,7 +428,7 @@ export function App() {
 
         {/* Scrollable middle: the single scroll region for all content. */}
         <div className="flex-1 min-h-0 overflow-y-auto py-3">
-          <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
+          <FilterPanel workspaces={workspaces} stats={stats} filters={filters} onFiltersChange={setFilters} />
           <div className="px-4 py-2">
             <SearchBar
               value={filters.searchQuery}
@@ -453,7 +453,7 @@ export function App() {
               hiddenByKind={visibility.hiddenByKind}
               hiddenByCommunity={visibility.hiddenByCommunity}
               hiddenBySearch={visibility.hiddenBySearch}
-              hiddenByCodebase={visibility.hiddenByCodebase}
+              hiddenByWorkspace={visibility.hiddenByWorkspace}
               isolatedHidden={isolatedHidden}
             />
           </div>

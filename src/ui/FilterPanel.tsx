@@ -8,14 +8,14 @@ import type {
 import { nodeKindColor, edgeRelationColor } from "../theme/theme";
 
 interface FilterPanelProps {
-  codebases: CodebaseSummary[];
+  workspaces: CodebaseSummary[];
   stats: ExportStats;
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
 }
 
 export function FilterPanel({
-  codebases,
+  workspaces,
   stats,
   filters,
   onFiltersChange,
@@ -40,10 +40,10 @@ export function FilterPanel({
     onFiltersChange({ ...filters, edgeRelations: next });
   };
 
-  const selectCodebase = (id: string | null) => {
+  const selectWorkspace = (id: string | null) => {
     onFiltersChange({
       ...filters,
-      codebaseId: id,
+      workspaceId: id,
       nodeKinds: new Set(),
       edgeRelations: new Set(),
       searchQuery: "",
@@ -55,18 +55,18 @@ export function FilterPanel({
 
   return (
     <div className="px-4 pt-2 flex flex-col gap-4">
-      {/* Codebase selector */}
+      {/* Workspace selector */}
       <div>
         <label
           className="text-xs font-semibold mb-1 block"
           style={{ color: "var(--gv-text-secondary)" }}
         >
-          Codebase
+          Workspace
         </label>
         <select
-          value={filters.codebaseId ?? ""}
+          value={filters.workspaceId ?? ""}
           onChange={(e) =>
-            selectCodebase(e.target.value || null)
+            selectWorkspace(e.target.value || null)
           }
           className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--gv-accent)]"
           style={{
@@ -75,8 +75,8 @@ export function FilterPanel({
             color: "var(--gv-text-primary)",
           }}
         >
-          <option value="">All ({codebases.length})</option>
-          {codebases.map((c) => (
+          <option value="">All ({workspaces.length})</option>
+          {workspaces.map((c) => (
             <option key={c.codebase_id} value={c.codebase_id}>
               {c.codebase_id} ({c.node_count} nodes)
             </option>

@@ -41,8 +41,8 @@ export function HandoffStatus({ state }: HandoffStatusProps) {
         </h1>
         <p className="text-sm max-w-sm" style={{ color: "var(--gv-text-secondary)" }}>
           {state.status === "waiting"
-            ? "Waiting for the tenant console to hand off your graph. This tab was opened from the console's Codebases page."
-            : "Fetching the graph export for this codebase."}
+            ? "Waiting for the tenant console to hand off your graph. This tab was opened from the console's Workspaces page."
+            : "Fetching the graph export for this workspace."}
         </p>
       </Shell>
     );
@@ -55,7 +55,7 @@ export function HandoffStatus({ state }: HandoffStatusProps) {
         <p className="text-sm max-w-sm" style={{ color: "var(--gv-text-secondary)" }}>
           This graph link is single-use and short-lived. Reopen the viewer from the
           <span className="font-medium"> View graph </span>
-          button on the console's Codebases page to start a fresh session.
+          button on the console's Workspaces page to start a fresh session.
         </p>
       </Shell>
     );
@@ -66,7 +66,7 @@ export function HandoffStatus({ state }: HandoffStatusProps) {
       <Shell>
         <h1 className="text-lg font-semibold">Not authorized</h1>
         <p className="text-sm max-w-sm" style={{ color: "var(--gv-text-secondary)" }}>
-          Your tenant does not own this codebase, or access was revoked. Reopen from the
+          Your tenant does not own this workspace, or access was revoked. Reopen from the
           console if you believe this is an error.
         </p>
       </Shell>

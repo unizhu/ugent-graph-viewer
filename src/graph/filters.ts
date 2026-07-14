@@ -25,11 +25,11 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
   let hiddenByKind = 0;
   let hiddenByCommunity = 0;
   let hiddenBySearch = 0;
-  let hiddenByCodebase = 0;
+  let hiddenByWorkspace = 0;
 
   // Fast path: no filters -> everything visible.
   if (
-    !filters.codebaseId &&
+    !filters.workspaceId &&
     !hasKindFilter &&
     !hasSearch &&
     !hasRelationFilter &&
@@ -41,7 +41,7 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
       hiddenByKind: 0,
       hiddenByCommunity: 0,
       hiddenBySearch: 0,
-      hiddenByCodebase: 0,
+      hiddenByWorkspace: 0,
     };
   }
 
@@ -51,10 +51,10 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
     let visible = true;
     let blamed = false;
 
-    if (filters.codebaseId && attrs.codebaseId !== filters.codebaseId) {
+    if (filters.workspaceId && attrs.workspaceId !== filters.workspaceId) {
       visible = false;
       if (!blamed) {
-        hiddenByCodebase++;
+        hiddenByWorkspace++;
         blamed = true;
       }
     }
@@ -107,6 +107,6 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
     hiddenByKind,
     hiddenByCommunity,
     hiddenBySearch,
-    hiddenByCodebase,
+    hiddenByWorkspace,
   };
 }
