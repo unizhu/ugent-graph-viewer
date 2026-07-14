@@ -1,6 +1,7 @@
 import Graph from "graphology";
 import type { FilterState, NodeKind } from "../types";
 import { nodeKindColor, edgeRelationColor } from "../theme/theme";
+import { compileSearch, type SearchMatcher } from "../graph/search";
 
 // Shared node/link builders used by both the 2D and 3D canvases. Kept in one
 // place so the two render modes always agree on which nodes/links are visible
@@ -35,6 +36,7 @@ export interface RenderGraphData {
 /** Check if a node should be hidden based on filter state. */
 function shouldHideNode(
   filters: FilterState,
+  matcher: SearchMatcher,
   data: {
     label: string;
     kind: string;
@@ -57,14 +59,8 @@ function shouldHideNode(
   ) {
     return true;
   }
-  if (filters.searchQuery) {
-    const q = filters.searchQuery.toLowerCase();
-    if (
-      !data.label.toLowerCase().includes(q) &&
-      !(data.filePath || "").toLowerCase().includes(q)
-    ) {
-      return true;
-    }
+  if (!matcher.isEmpty && !matcher.test(data.label, data.filePath || "")) {
+    return true;
   }
   return false;
 }
@@ -93,9 +89,10 @@ export function capByDegree(data: RenderGraphData, limit: number): RenderGraphDa
 export function buildSymbolGraphData(graph: Graph, filters: FilterState): RenderGraphData {
   const nodes: RenderNode[] = [];
   const nodeMap = new Map<string, RenderNode>();
+  const matcher = compileSearch(filters.searchQuery, filters.searchRegex);
 
   graph.forEachNode((nodeId, attrs) => {
-    const isHidden = shouldHideNode(filters, {
+    const isHidden = shouldHideNode(filters, matcher, {
       label: attrs.label || nodeId,
       kind: attrs.kind,
       codebaseId: attrs.codebaseId,
@@ -149,9 +146,10 @@ export function buildAggregatedGraphData(graph: Graph, filters: FilterState): Re
 
   const fileNodes = new Map<string, RenderNode>();
   const idToFileKey = new Map<string, string>();
+  const matcher = compileSearch(filters.searchQuery, filters.searchRegex);
 
   graph.forEachNode((nodeId, attrs) => {
-    const isHidden = shouldHideNode(filters, {
+    const isHidden = shouldHideNode(filters, matcher, {
       label: attrs.label || nodeId,
       kind: attrs.kind,
       codebaseId: attrs.codebaseId,

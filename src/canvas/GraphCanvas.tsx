@@ -93,6 +93,7 @@ export function GraphCanvas({
       filters.aggregateMode,
       filters.codebaseId,
       filters.searchQuery,
+      filters.searchRegex,
       filters.nodeKinds,
       filters.edgeRelations,
       filters.selectedCommunities,

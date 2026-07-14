@@ -92,6 +92,7 @@ export function App() {
     nodeKinds: new Set(DEFAULT_NODE_KINDS),
     edgeRelations: new Set(),
     searchQuery: "",
+    searchRegex: false,
     showIsolated: false,
     selectedCommunities: new Set(),
     aggregateMode: false,
@@ -178,6 +179,7 @@ export function App() {
         nodeKinds: pickDefaultKinds(viewport),
         edgeRelations: new Set(),
         searchQuery: "",
+        searchRegex: false,
         showIsolated: false,
         selectedCommunities: new Set(),
         aggregateMode: aggregate,
@@ -428,7 +430,12 @@ export function App() {
         <div className="flex-1 min-h-0 overflow-y-auto py-3">
           <FilterPanel codebases={codebases} stats={stats} filters={filters} onFiltersChange={setFilters} />
           <div className="px-4 py-2">
-            <SearchBar value={filters.searchQuery} onChange={(q) => setFilters({ ...filters, searchQuery: q })} />
+            <SearchBar
+              value={filters.searchQuery}
+              onChange={(q) => setFilters({ ...filters, searchQuery: q })}
+              regexMode={filters.searchRegex}
+              onRegexModeChange={(on) => setFilters({ ...filters, searchRegex: on })}
+            />
           </div>
           <div className="px-4 py-2">
             <CommunityPanel

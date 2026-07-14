@@ -116,6 +116,9 @@ export interface FilterState {
   nodeKinds: Set<NodeKind>;
   edgeRelations: Set<EdgeRelation>;
   searchQuery: string;
+  // When true, searchQuery is treated as a case-insensitive regular expression;
+  // otherwise it uses plain multi-term matching (| = OR, space = AND).
+  searchRegex: boolean;
   showIsolated: boolean;
   selectedCommunities: Set<number>;
   // When true, ForceGraph3D collapses symbol-level nodes into their parent

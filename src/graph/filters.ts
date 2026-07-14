@@ -5,6 +5,7 @@ import type {
   EdgeRelation,
   VisibilityCounts,
 } from "../types";
+import { compileSearch } from "./search";
 
 /**
  * Compute visibility counts from filter state WITHOUT mutating the graph.
@@ -18,7 +19,8 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
   const hasKindFilter = filters.nodeKinds.size > 0;
   const hasRelationFilter = filters.edgeRelations.size > 0;
   const hasCommunityFilter = filters.selectedCommunities.size > 0;
-  const hasSearch = !!filters.searchQuery;
+  const searchMatcher = compileSearch(filters.searchQuery, filters.searchRegex);
+  const hasSearch = !searchMatcher.isEmpty;
 
   let hiddenByKind = 0;
   let hiddenByCommunity = 0;
@@ -76,11 +78,7 @@ export function countVisible(graph: Graph, filters: FilterState): VisibilityCoun
       }
     }
     if (visible && hasSearch) {
-      const q = filters.searchQuery.toLowerCase();
-      if (
-        !(attrs.label as string).toLowerCase().includes(q) &&
-        !((attrs.filePath as string) || "").toLowerCase().includes(q)
-      ) {
+      if (!searchMatcher.test((attrs.label as string) || "", (attrs.filePath as string) || "")) {
         visible = false;
         if (!blamed) {
           hiddenBySearch++;
