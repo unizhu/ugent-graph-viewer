@@ -19,6 +19,7 @@ export const DEFAULT_RENDER_MODE: RenderMode = "3d";
 
 const MODE_KEY = "gv:render-mode";
 const ORBIT_KEY = "gv:orbit";
+const VIEW_MODE_KEY = "gv:view-mode";
 
 function safeGet(key: string): string | null {
   try {
@@ -62,4 +63,13 @@ export function loadOrbit(): OrbitSettings {
 
 export function saveOrbit(orbit: OrbitSettings): void {
   safeSet(ORBIT_KEY, JSON.stringify(orbit));
+}
+
+/** Persisted code/memory view toggle (R3). Defaults to "code". */
+export function loadViewMode(): import("../types").ViewMode {
+  return safeGet(VIEW_MODE_KEY) === "memory" ? "memory" : "code";
+}
+
+export function saveViewMode(mode: import("../types").ViewMode): void {
+  safeSet(VIEW_MODE_KEY, mode);
 }

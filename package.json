@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx src/graph/memory-loader.test.ts"
   },
   "dependencies": {
     "graphology": "0.26.0",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "6.0.1",
+    "tsx": "^4.23.1",
     "typescript": "6.0.3",
     "vite": "8.0.10"
   }

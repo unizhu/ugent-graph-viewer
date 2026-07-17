@@ -2,9 +2,16 @@ import { useRef, useMemo, useState, useEffect, useCallback } from "react";
 import ForceGraph3D from "react-force-graph-3d";
 import ForceGraph2D from "react-force-graph-2d";
 import Graph from "graphology";
-import type { FilterState } from "../types";
+import type { FilterState, MemoryFilterState, ViewMode } from "../types";
 import { currentTheme } from "../theme/theme";
-import { buildGraphData, nodeSize, type RenderLink, type RenderNode } from "./graph-data";
+import {
+  buildGraphData,
+  buildMemoryGraphData,
+  nodeSize,
+  memoryNodeSize,
+  type RenderLink,
+  type RenderNode,
+} from "./graph-data";
 import type { OrbitSettings, RenderMode } from "./render-settings";
 
 // Above these counts the 3D path sheds geometry (arrow cones off, lower sphere
@@ -15,6 +22,10 @@ const LOW_RES_ABOVE_NODES = 2000;
 interface GraphCanvasProps {
   graph: Graph;
   filters: FilterState;
+  /** Active view. Memory mode uses `memoryFilters` and memory accessors. */
+  viewMode?: ViewMode;
+  /** Filters for the memory view; required when viewMode === "memory". */
+  memoryFilters?: MemoryFilterState;
   onNodeClick: (nodeId: string) => void;
   selectedNodeId: string | null;
   /** Deep-link / handoff focus target; the camera flies to it once (R13). */
@@ -35,6 +46,8 @@ const DIM_LINK = "rgba(55, 65, 81, 0.05)";
 export function GraphCanvas({
   graph,
   filters,
+  viewMode = "code",
+  memoryFilters,
   onNodeClick,
   selectedNodeId,
   focusNodeId,
@@ -43,6 +56,7 @@ export function GraphCanvas({
   mode,
   orbit,
 }: GraphCanvasProps) {
+  const isMemory = viewMode === "memory";
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -85,11 +99,16 @@ export function GraphCanvas({
   // primitive filter values (not the filters object identity) so a new object
   // reference alone doesn't force a rebuild + re-layout; only real changes do.
   const graphData = useMemo(
-    () => buildGraphData(graph, filters, revealLimit),
+    () =>
+      isMemory && memoryFilters
+        ? buildMemoryGraphData(graph, memoryFilters)
+        : buildGraphData(graph, filters, revealLimit),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       graph,
       revealLimit,
+      isMemory,
+      // Code filters:
       filters.aggregateMode,
       filters.workspaceId,
       filters.searchQuery,
@@ -97,6 +116,14 @@ export function GraphCanvas({
       filters.nodeKinds,
       filters.edgeRelations,
       filters.selectedCommunities,
+      // Memory filters:
+      memoryFilters?.kinds,
+      memoryFilters?.tiers,
+      memoryFilters?.hubs,
+      memoryFilters?.showSuperseded,
+      memoryFilters?.searchQuery,
+      memoryFilters?.searchRegex,
+      memoryFilters?.hideOrphans,
     ],
   );
 
@@ -114,7 +141,10 @@ export function GraphCanvas({
       const nextNodes = new Set<string>([node.id]);
       const nextLinks = new Set<string>();
 
-      if (filters.aggregateMode) {
+      // Aggregate and memory views derive links in the builder (not 1:1 with
+      // the graphology edges), so highlight from the rendered links; the code
+      // symbol view can walk graphology directly.
+      if (filters.aggregateMode || isMemory) {
         for (const link of graphData.links) {
           const src = typeof link.source === "object" ? (link.source as { id: string }).id : link.source;
           const tgt = typeof link.target === "object" ? (link.target as { id: string }).id : link.target;
@@ -136,7 +166,7 @@ export function GraphCanvas({
       setHighlightLinks(nextLinks);
       setHoveredNode(node);
     },
-    [graph, hoveredNode, filters.aggregateMode, graphData],
+    [graph, hoveredNode, filters.aggregateMode, isMemory, graphData],
   );
 
   // Click flies the camera to the node (3D uses cameraPosition; 2D centers).
@@ -277,7 +307,9 @@ export function GraphCanvas({
   );
 
   const nodeLabel = useCallback(
-    (node: RenderNode) => `
+    (node: RenderNode) => {
+      if (node.memoryKind) return memoryNodeTooltip(node, theme);
+      return `
       <div style="
         background: ${theme.tokens.surfaceRaised};
         border: 1px solid ${theme.tokens.border};
@@ -302,8 +334,16 @@ export function GraphCanvas({
             : ""
         }
       </div>
-    `,
+    `;
+    },
     [theme],
+  );
+
+  // Node draw size: memory view sizes records by importance/access and hubs by
+  // member count; code view sizes by degree.
+  const nodeVal = useCallback(
+    (node: RenderNode) => (node.memoryKind ? memoryNodeSize(node) : nodeSize(node.degree)),
+    [],
   );
 
   // Geometry shedding for large 3D graphs.
@@ -330,7 +370,7 @@ export function GraphCanvas({
           graphData={graphData}
           backgroundColor="rgba(0, 0, 0, 0)"
           nodeColor={nodeColor}
-          nodeVal={(node: RenderNode) => nodeSize(node.degree)}
+          nodeVal={nodeVal}
           nodeResolution={nodeRes}
           nodeLabel={nodeLabel}
           linkColor={linkColor}
@@ -352,7 +392,7 @@ export function GraphCanvas({
           graphData={graphData}
           backgroundColor="rgba(0, 0, 0, 0)"
           nodeColor={nodeColor}
-          nodeVal={(node: RenderNode) => nodeSize(node.degree)}
+          nodeVal={nodeVal}
           nodeLabel={nodeLabel}
           nodeRelSize={4}
           linkColor={linkColor}
@@ -368,4 +408,66 @@ export function GraphCanvas({
       )}
     </div>
   );
+}
+
+// Escape user-supplied strings before interpolating into the tooltip HTML.
+// Record content and hub values are untrusted (they come from the export), and
+// react-force-graph injects nodeLabel as raw HTML.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Tooltip for a memory node. Records show a content preview plus kind/tier and
+// key identity fields; hubs show the dimension and member count.
+function memoryNodeTooltip(
+  node: RenderNode,
+  theme: ReturnType<typeof currentTheme>,
+): string {
+  const shell = (inner: string) => `
+    <div style="
+      background: ${theme.tokens.surfaceRaised};
+      border: 1px solid ${theme.tokens.border};
+      border-radius: 8px;
+      padding: 8px 12px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      backdrop-filter: blur(12px);
+      max-width: 320px;
+    ">${inner}</div>`;
+
+  const header = (title: string) => `
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${node.color};"></span>
+      <span style="font-weight:700; color:${theme.tokens.textPrimary}; font-size:13px;">${title}</span>
+    </div>`;
+
+  const chip = (label: string, value: string) => `
+    <div style="font-size:11px; color:${theme.tokens.textSecondary}; margin-bottom:3px;">
+      <span style="font-weight:500;">${label}:</span>
+      <span style="font-family:monospace; background:${theme.tokens.surface}; padding:1px 4px; border-radius:4px; color:${theme.tokens.accent};">${value}</span>
+    </div>`;
+
+  if (node.memoryKind && node.memoryKind !== "record") {
+    return shell(
+      header(escapeHtml(node.label)) +
+        chip("Hub", escapeHtml(node.memoryKind)) +
+        chip("Members", String(node.memberCount ?? 0)),
+    );
+  }
+
+  const record = node.record;
+  const content = record ? escapeHtml(record.content.replace(/\s+/g, " ").trim()) : "";
+  const preview = content.length > 200 ? `${content.slice(0, 197)}...` : content;
+  const parts = [header("Memory record")];
+  parts.push(`
+    <div style="font-size:12px; color:${theme.tokens.textPrimary}; line-height:1.4; margin-bottom:6px; border-top:1px solid ${theme.tokens.border}; padding-top:6px;">${preview}</div>`);
+  if (record?.kind) parts.push(chip("Kind", escapeHtml(record.kind)));
+  if (record?.tier) parts.push(chip("Tier", escapeHtml(record.tier)));
+  if (record?.category) parts.push(chip("Category", escapeHtml(record.category)));
+  if (record?.superseded) parts.push(chip("Status", "superseded"));
+  return shell(parts.join(""));
 }

@@ -3,7 +3,7 @@ dist/
 *.log
 .DS_Store
 
-# Exported graph data (keep manifest.json template)
-data/*.json
-data/
+# Exported graph data (keep manifest.json template + seeded memory sample)
+data/*
 !data/manifest.json
+!data/memory-sample.ndjson

@@ -78,6 +78,33 @@ run standalone it falls back to a dark theme.
   tenant graphs stay responsive. Constants live in `src/ui/App.tsx`.
 - **Deep-linking** via `?node=<id>` and via the handoff focus node.
 
+## Memory graph view
+
+Alongside the code graph, the viewer can explore a **memory export** — the
+flat list of memory records the engine stores per tenant. Switch between
+**Code** and **Memory** with the toggle in the sidebar header (each mode is
+enabled once its dataset is loaded; the choice persists per session).
+
+Load a memory export the same way as a code graph: **Load Graph JSON**
+(also accepts `.ndjson`) or a **Quick load** manifest entry. The format is
+detected by shape, so no mode switch is needed before loading:
+
+- a JSON array of records,
+- a `{ "records": [...] }` wrapper, or
+- **NDJSON** (one record object per line; blank/malformed lines are skipped).
+
+Each record becomes a node; identity fields (`actor_id`, `app_id`,
+`agent_id`, `session_id`, `scope_id`) are synthesized into **hub nodes** that
+records connect to via *membership* edges, and `superseded_by` produces
+*supersession* edges (drawn only when the target record is in the export).
+Hub dimensions can be toggled on/off without reloading. The memory panels
+offer kind/tier/hub filters, a show-superseded and hide-orphans switch, a
+stats panel, and a record/hub inspector (hubs list up to 50 members).
+
+A seeded sample lives at [`data/memory-sample.ndjson`](data/memory-sample.ndjson)
+(~200 synthetic records with supersession chains across several actors, apps,
+and sessions) and is wired into the quick-load manifest.
+
 ## Tech stack
 
 | Library | Purpose |

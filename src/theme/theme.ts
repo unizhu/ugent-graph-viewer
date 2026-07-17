@@ -5,7 +5,7 @@
 // through `nodeKindColor`, so light/dark rendering matches the console the
 // user launched from.
 
-import type { NodeKind } from "../types";
+import type { NodeKind, MemoryNodeKind, MemoryEdgeKind } from "../types";
 
 export type GraphTheme = "light" | "dark";
 
@@ -189,4 +189,35 @@ const EDGE_HUE_SLOT: Record<string, keyof GraphKindPalette> = {
 export function edgeRelationColor(relation: string): string {
   const slot = EDGE_HUE_SLOT[relation];
   return slot ? current.kinds[slot] : current.tokens.border;
+}
+
+/**
+ * Memory-view palettes. The console handoff carries code node-kind hues only,
+ * so the memory graph uses its own fixed palette (like code hues, these read
+ * well on both the light and dark canvas and stay constant across a theme
+ * swap). Records are neutral so the colored identity hubs stand out; each hub
+ * dimension gets a distinct hue.
+ */
+const MEMORY_NODE_PALETTE: Record<MemoryNodeKind, string> = {
+  record: "#94a3b8", // slate — neutral, so hubs pop against a field of records
+  actor: "#3b82f6", // blue
+  app: "#8b5cf6", // violet
+  agent: "#10b981", // emerald
+  session: "#f59e0b", // amber
+  scope: "#ec4899", // pink
+};
+
+const MEMORY_EDGE_PALETTE: Record<MemoryEdgeKind, string> = {
+  membership: "#64748b", // muted slate — structural, recedes
+  supersession: "#f97316", // orange — draws the eye to replacement chains
+};
+
+/** Per-kind memory node color (record or identity hub). */
+export function memoryNodeColor(kind: MemoryNodeKind): string {
+  return MEMORY_NODE_PALETTE[kind] ?? MEMORY_NODE_PALETTE.record;
+}
+
+/** Per-kind memory edge color (membership or supersession). */
+export function memoryEdgeColor(kind: MemoryEdgeKind): string {
+  return MEMORY_EDGE_PALETTE[kind] ?? current.tokens.border;
 }

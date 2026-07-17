@@ -2,6 +2,7 @@
   "files": [
     "ugent-7559fca657ae.json",
     "converted-fa579d367877.json",
-    "cndl-enhanced-4ad6983d1c7a.json"
+    "cndl-enhanced-4ad6983d1c7a.json",
+    { "file": "memory-sample.ndjson", "type": "memory" }
   ]
 }
