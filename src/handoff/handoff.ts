@@ -35,10 +35,20 @@ const HANDSHAKE_TIMEOUT_MS = 8000;
 // falling back to the explicit "reopen from the console" state (R14).
 const MAX_RECOVERY_ATTEMPTS = 1;
 
+/**
+ * What the console handed off. "graph" is the Phase-5 code-graph viewport;
+ * "memory" (R7) is the tenant's memory export NDJSON, which the viewer parses
+ * with `parseMemoryExport` and shows in the memory view.
+ */
+export type HandoffDataType = "graph" | "memory";
+
 export type HandoffState =
   | { status: "waiting" } // handshake in flight, awaiting the console
-  | { status: "loading" } // redeeming / fetching the viewport
-  | { status: "ready"; viewport: ExportViewport; focusNode: string | null }
+  | { status: "loading" } // redeeming / fetching the data
+  // Ready is discriminated by data type: a code graph carries the viewport
+  // (and optional focus node); a memory graph carries the raw NDJSON text.
+  | { status: "ready"; dataType: "graph"; viewport: ExportViewport; focusNode: string | null }
+  | { status: "ready"; dataType: "memory"; memoryText: string }
   | { status: "expired" } // token expired / opener gone -> reopen from console
   | { status: "forbidden" } // engine 403 (ownership)
   | { status: "error"; reason: string };
@@ -48,6 +58,8 @@ interface HandoffMessage {
   token: string;
   consoleOrigin: string;
   codebaseId?: string;
+  // Absent means "graph" (Phase-5 consoles predate this field).
+  dataType?: HandoffDataType;
   theme?: unknown;
   node?: string | null;
 }
@@ -90,6 +102,7 @@ export function createHandoff(onState: (state: HandoffState) => void): HandoffCo
   let consoleOrigin: string | null = null;
   let token: string | null = null;
   let focusNode: string | null = null;
+  let dataType: HandoffDataType = "graph";
   let recoveryAttempts = 0;
   let handshakeTimer: number | null = null;
 
@@ -143,10 +156,17 @@ export function createHandoff(onState: (state: HandoffState) => void): HandoffCo
         onState({ status: "error", reason: `data fetch failed (HTTP ${dataRes.status})` });
         return;
       }
-      const viewport = (await dataRes.json()) as ExportViewport;
       settled = true;
       clearTimer();
-      onState({ status: "ready", viewport, focusNode });
+      if (dataType === "memory") {
+        // Memory is streamed as NDJSON; hand the raw text to the memory view,
+        // which parses it with `parseMemoryExport`.
+        const memoryText = await dataRes.text();
+        onState({ status: "ready", dataType: "memory", memoryText });
+      } else {
+        const viewport = (await dataRes.json()) as ExportViewport;
+        onState({ status: "ready", dataType: "graph", viewport, focusNode });
+      }
     } catch (err) {
       onState({ status: "error", reason: (err as Error).message || "network error" });
     }
@@ -184,6 +204,7 @@ export function createHandoff(onState: (state: HandoffState) => void): HandoffCo
 
     consoleOrigin = event.origin;
     token = event.data.token;
+    dataType = event.data.dataType === "memory" ? "memory" : "graph";
     focusNode =
       typeof event.data.node === "string" && event.data.node.length > 0
         ? event.data.node

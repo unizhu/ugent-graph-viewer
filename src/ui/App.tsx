@@ -303,22 +303,6 @@ export function App() {
     if (fromUrl) setFocusNode(fromUrl);
   }, []);
 
-  // Start the console handoff exactly once, only when opened with an opener.
-  // Standalone opens (direct URL, file load) skip this entirely and keep the
-  // existing loader UI.
-  useEffect(() => {
-    if (!hasConsoleOpener()) return;
-    const controller = createHandoff((state) => {
-      setHandoffState(state);
-      if (state.status === "ready") {
-        if (state.focusNode) setFocusNode(state.focusNode);
-        beginLoad(state.viewport);
-      }
-    });
-    controller.start();
-    return () => controller.dispose();
-  }, [beginLoad]);
-
   // Load a memory export from raw text (R3): parse records, build the graph
   // from the current hub toggles, and switch to memory view. Kept independent
   // of the code load path; both datasets can be resident at once.
@@ -341,6 +325,28 @@ export function App() {
     },
     [memoryFilters.hubs],
   );
+
+  // Start the console handoff exactly once, only when opened with an opener.
+  // Standalone opens (direct URL, file load) skip this entirely and keep the
+  // existing loader UI. Declared after `loadMemoryText` so the memory branch
+  // can call it.
+  useEffect(() => {
+    if (!hasConsoleOpener()) return;
+    const controller = createHandoff((state) => {
+      setHandoffState(state);
+      if (state.status !== "ready") return;
+      if (state.dataType === "memory") {
+        // Console handed off the tenant's memory export; load it into the
+        // memory view (which also flips viewMode to "memory").
+        loadMemoryText(state.memoryText);
+      } else {
+        if (state.focusNode) setFocusNode(state.focusNode);
+        beginLoad(state.viewport);
+      }
+    });
+    controller.start();
+    return () => controller.dispose();
+  }, [beginLoad, loadMemoryText]);
 
   // Shape-detecting dispatcher: memory exports (NDJSON / record array /
   // {records:[]}) go to the memory path; everything else is a code
