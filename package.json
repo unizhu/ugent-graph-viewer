@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsx src/graph/memory-loader.test.ts && tsx src/handoff/handoff.test.ts"
+    "test": "tsx src/graph/memory-loader.test.ts && tsx src/handoff/handoff.test.ts && tsx src/canvas/render-settings.test.ts"
   },
   "dependencies": {
     "graphology": "0.26.0",

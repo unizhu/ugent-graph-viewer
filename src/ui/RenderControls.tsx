@@ -9,6 +9,8 @@ interface RenderControlsProps {
   onModeChange: (mode: RenderMode) => void;
   orbit: OrbitSettings;
   onOrbitChange: (orbit: OrbitSettings) => void;
+  showStats: boolean;
+  onShowStatsChange: (show: boolean) => void;
 }
 
 function intervalLabel(ms: number): string {
@@ -20,7 +22,14 @@ function intervalLabel(ms: number): string {
  * auto-orbit toggle + interval (R2). Orbit only applies in 3D, so its controls
  * are disabled in 2D.
  */
-export function RenderControls({ mode, onModeChange, orbit, onOrbitChange }: RenderControlsProps) {
+export function RenderControls({
+  mode,
+  onModeChange,
+  orbit,
+  onOrbitChange,
+  showStats,
+  onShowStatsChange,
+}: RenderControlsProps) {
   const is3d = mode === "3d";
 
   return (
@@ -79,6 +88,41 @@ export function RenderControls({ mode, onModeChange, orbit, onOrbitChange }: Ren
           <span
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
               orbit.enabled ? "left-[18px]" : "left-0.5"
+            }`}
+            style={{ border: "1px solid rgba(0,0,0,0.15)" }}
+          />
+        </button>
+      </div>
+
+      {/* Render statistics overlay (3D only) */}
+      <div className="flex items-center justify-between">
+        <span
+          className="text-xs font-semibold"
+          style={{ color: is3d ? "var(--gv-text-secondary)" : "var(--gv-border)" }}
+          title={
+            is3d
+              ? "Show draw calls, triangles and frame rate on the canvas"
+              : "Render stats are only available in 3D"
+          }
+        >
+          Render stats
+        </span>
+        <button
+          type="button"
+          disabled={!is3d}
+          onClick={() => onShowStatsChange(!showStats)}
+          aria-pressed={showStats}
+          className="w-9 h-5 rounded-full transition-colors relative"
+          style={{
+            background: is3d && showStats ? "var(--gv-accent)" : "var(--gv-border)",
+            border: "1px solid var(--gv-border)",
+            opacity: is3d ? 1 : 0.5,
+            cursor: is3d ? "pointer" : "not-allowed",
+          }}
+        >
+          <span
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+              showStats ? "left-[18px]" : "left-0.5"
             }`}
             style={{ border: "1px solid rgba(0,0,0,0.15)" }}
           />

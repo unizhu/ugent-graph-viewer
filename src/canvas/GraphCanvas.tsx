@@ -12,12 +12,14 @@ import {
   type RenderLink,
   type RenderNode,
 } from "./graph-data";
-import type { OrbitSettings, RenderMode } from "./render-settings";
-
-// Above these counts the 3D path sheds geometry (arrow cones off, lower sphere
-// resolution) to keep large graphs interactive. 2D has no such geometry cost.
-const ARROWS_OFF_ABOVE_LINKS = 2500;
-const LOW_RES_ABOVE_NODES = 2000;
+import {
+  arrowsEnabledFor,
+  cylinderLinksFor,
+  hoverHighlightFor,
+  nodeResolutionFor,
+  type OrbitSettings,
+  type RenderMode,
+} from "./render-settings";
 
 interface GraphCanvasProps {
   graph: Graph;
@@ -38,6 +40,8 @@ interface GraphCanvasProps {
   mode: RenderMode;
   /** Auto-orbit toggle + interval (R2). Orbit is 3D-only. */
   orbit: OrbitSettings;
+  /** Show the 3D render statistics overlay (draw calls / triangles / fps). */
+  showStats?: boolean;
 }
 
 const DIM_NODE = "rgba(107, 114, 128, 0.15)";
@@ -55,6 +59,7 @@ export function GraphCanvas({
   revealLimit,
   mode,
   orbit,
+  showStats = false,
 }: GraphCanvasProps) {
   const isMemory = viewMode === "memory";
   const fgRef = useRef<any>(null);
@@ -127,10 +132,22 @@ export function GraphCanvas({
     ],
   );
 
+  // Quality tiers for this graph size (see render-settings for the reasoning).
+  const cylinderLinks = cylinderLinksFor(graphData.links.length);
+  const highlightOnHover = hoverHighlightFor(graphData.nodes.length);
+
   // Hover highlights the node's first-hop neighbors and links.
   const handleNodeHover = useCallback(
     (node: RenderNode | null) => {
       if (node === hoveredNode) return;
+      // Past the tier, skip the highlight sets entirely: populating them
+      // re-renders, which changes the color/width accessor identities, which
+      // makes react-force-graph re-evaluate them over every node and link.
+      // The tooltip still tracks the cursor.
+      if (!highlightOnHover) {
+        setHoveredNode(node);
+        return;
+      }
       if (!node) {
         setHighlightNodes(new Set());
         setHighlightLinks(new Set());
@@ -166,7 +183,7 @@ export function GraphCanvas({
       setHighlightLinks(nextLinks);
       setHoveredNode(node);
     },
-    [graph, hoveredNode, filters.aggregateMode, isMemory, graphData],
+    [graph, hoveredNode, filters.aggregateMode, isMemory, graphData, highlightOnHover],
   );
 
   // Click flies the camera to the node (3D uses cameraPosition; 2D centers).
@@ -267,6 +284,46 @@ export function GraphCanvas({
     return () => clearInterval(interval);
   }, [mode, orbit.enabled, orbit.intervalMs, hoveredNode, selectedNodeId, userInteracted]);
 
+  // Render statistics for the 3D path. Draw calls are the figure that decides
+  // whether this renderer can carry a graph this size: three-forcegraph makes
+  // one object per node and per link, so the count tracks node+link count
+  // rather than anything about the scene's complexity.
+  //
+  // `renderer.info.render.calls` is per-frame and reset by three each frame, so
+  // sampling it on an interval reads the most recent frame. The rate shown is
+  // requestAnimationFrame callbacks per second, which tracks the render loop
+  // but is not identical to it -- it is a health indicator, not a benchmark.
+  const [renderStats, setRenderStats] = useState<{
+    calls: number;
+    triangles: number;
+    fps: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!showStats || mode !== "3d") {
+      setRenderStats(null);
+      return;
+    }
+    let frames = 0;
+    let raf = requestAnimationFrame(function tick() {
+      frames += 1;
+      raf = requestAnimationFrame(tick);
+    });
+    const sample = window.setInterval(() => {
+      const info = fgRef.current?.renderer?.()?.info?.render;
+      setRenderStats({
+        calls: info?.calls ?? 0,
+        triangles: info?.triangles ?? 0,
+        fps: frames,
+      });
+      frames = 0;
+    }, 1000);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearInterval(sample);
+    };
+  }, [showStats, mode]);
+
   // Theme-derived canvas chrome, read at render (theme is applied before load).
   const theme = currentTheme();
   const canvasBg =
@@ -298,12 +355,19 @@ export function GraphCanvas({
   const linkWidth = useCallback(
     (link: RenderLink) => {
       const baseWidth = Math.max(0.5, link.confidence * 1.5);
+      // Past the tier, everything unhighlighted must be EXACTLY 0: that is what
+      // makes three-forcegraph build a 2-vertex unlit Line rather than a
+      // CylinderGeometry mesh with a lit material. A small non-zero "dimmed"
+      // width looks thinner but costs the same as a full cylinder.
+      if (!cylinderLinks) {
+        return highlightLinks.has(link.id) ? baseWidth * 1.5 : 0;
+      }
       if (highlightNodes.size > 0) {
         return highlightLinks.has(link.id) ? baseWidth * 1.5 : 0.2;
       }
       return baseWidth;
     },
-    [highlightNodes, highlightLinks],
+    [highlightNodes, highlightLinks, cylinderLinks],
   );
 
   const nodeLabel = useCallback(
@@ -346,9 +410,9 @@ export function GraphCanvas({
     [],
   );
 
-  // Geometry shedding for large 3D graphs.
-  const arrowsOn = graphData.links.length <= ARROWS_OFF_ABOVE_LINKS;
-  const nodeRes = graphData.nodes.length > LOW_RES_ABOVE_NODES ? 4 : 6;
+  // Geometry shedding for large 3D graphs; thresholds live in render-settings.
+  const arrowsOn = arrowsEnabledFor(graphData.links.length);
+  const nodeRes = nodeResolutionFor(graphData.nodes.length);
 
   const ready = dimensions.width > 0 && dimensions.height > 0;
 
@@ -382,6 +446,10 @@ export function GraphCanvas({
           onNodeHover={handleNodeHover}
           warmupTicks={60}
           cooldownTicks={0}
+          // Ask for the discrete GPU on dual-GPU machines. antialias is
+          // already true by default in three-render-objects, so it is not
+          // repeated here.
+          rendererConfig={{ powerPreference: "high-performance" }}
         />
       )}
       {ready && mode === "2d" && (
@@ -405,6 +473,23 @@ export function GraphCanvas({
           warmupTicks={60}
           cooldownTicks={80}
         />
+      )}
+      {renderStats && (
+        <div
+          className="absolute top-2 right-2 px-2 py-1 rounded-md font-mono text-[10px] leading-tight pointer-events-none"
+          style={{
+            background: "var(--gv-surface-raised)",
+            border: "1px solid var(--gv-border)",
+            color: "var(--gv-text-secondary)",
+          }}
+        >
+          <div>{renderStats.calls.toLocaleString()} draw calls</div>
+          <div>{renderStats.triangles.toLocaleString()} tris</div>
+          <div>
+            {renderStats.fps} fps &middot; {graphData.nodes.length.toLocaleString()}n{" "}
+            {graphData.links.length.toLocaleString()}e
+          </div>
+        </div>
       )}
     </div>
   );

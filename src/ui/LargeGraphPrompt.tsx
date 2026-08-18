@@ -16,9 +16,12 @@ interface Option {
 const OPTIONS: Option[] = [
   {
     choice: "file",
+    // Recommended, not merely lightest: at this size the full symbol graph is
+    // a hairball that is hard to read even when it renders smoothly, and the
+    // file rollup is both faster and more legible.
     title: "Aggregate to File View",
-    description: "Collapse symbols into their files. Fewest nodes — smoothest.",
-    badge: "Lightest",
+    description: "Collapse symbols into their files. Fewest nodes — smoothest, and easiest to read.",
+    badge: "Recommended",
   },
   {
     choice: "twod",

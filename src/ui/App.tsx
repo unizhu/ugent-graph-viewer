@@ -50,6 +50,8 @@ import {
   saveOrbit,
   loadViewMode,
   saveViewMode,
+  loadShowStats,
+  saveShowStats,
 } from "../canvas/render-settings";
 
 // Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
@@ -65,7 +67,12 @@ const PROGRESSIVE_INTERVAL_MS = 350;
 // Above this node count, prompt the user to choose how to open the graph
 // (File View / 2D full / 3D full) before rendering, so a huge export doesn't
 // drop them straight into the heaviest path (R5). Tunable.
-const LARGE_GRAPH_PROMPT_THRESHOLD = 8000;
+//
+// Counted against the export's post-pruning node total: the HTTP export drops
+// block nodes by default, so a 26k-node workspace arrives at roughly 10k. 5000
+// is where the 3D path starts costing more draw calls than a browser is
+// comfortable with, since every node and link is its own object.
+const LARGE_GRAPH_PROMPT_THRESHOLD = 5000;
 
 const DEFAULT_NODE_KINDS = new Set<NodeKind>([
   "module",
@@ -146,8 +153,10 @@ export function App() {
   // Render mode (2D/3D) and auto-orbit settings, persisted per session (R1, R2).
   const [renderMode, setRenderMode] = useState<RenderMode>(() => loadRenderMode());
   const [orbit, setOrbit] = useState<OrbitSettings>(() => loadOrbit());
+  const [showStats, setShowStats] = useState<boolean>(() => loadShowStats());
   useEffect(() => saveRenderMode(renderMode), [renderMode]);
   useEffect(() => saveOrbit(orbit), [orbit]);
+  useEffect(() => saveShowStats(showStats), [showStats]);
 
   // View mode (code/memory), persisted (R3). Both datasets may stay loaded in
   // memory; toggling swaps which one drives the canvas + panels, no reload.
@@ -607,6 +616,8 @@ export function App() {
             onModeChange={setRenderMode}
             orbit={orbit}
             onOrbitChange={setOrbit}
+            showStats={showStats}
+            onShowStatsChange={setShowStats}
           />
         </div>
 
@@ -733,6 +744,7 @@ export function App() {
             focusNodeId={null}
             mode={renderMode}
             orbit={orbit}
+            showStats={showStats}
           />
         ) : viewMode !== "memory" && graph ? (
           <GraphCanvas
@@ -745,6 +757,7 @@ export function App() {
             revealLimit={revealLimit}
             mode={renderMode}
             orbit={orbit}
+            showStats={showStats}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: "var(--gv-text-secondary)" }}>Loading graph...</div>
