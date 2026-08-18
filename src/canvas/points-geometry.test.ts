@@ -12,8 +12,10 @@
 import type { RenderGraphData, RenderLink, RenderNode } from "./graph-data.ts";
 import {
   NODE_SHAPE,
+  PICK_WINDOW,
   decodePickColor,
   encodePickColor,
+  nearestHit,
   nodeShapeFor,
   packGraph,
   packPickColors,
@@ -172,6 +174,53 @@ function data(nodes: RenderNode[], links: RenderLink[]): RenderGraphData {
   const memoryNode: RenderNode = { ...node("rec"), kind: "file", memoryKind: "record" };
   const packed = packGraph(data([memoryNode], []));
   eq("memory node is a sphere despite kind=file", packed.nodeShapes[0], NODE_SHAPE.sphere);
+}
+
+// --- nearestHit: the forgiving hover target ---
+{
+  const W = PICK_WINDOW;
+  const centre = (W - 1) / 2;
+  const blank = () => new Uint8Array(W * W * 4);
+  const put = (buf: Uint8Array, col: number, row: number, index: number) => {
+    const rgb = new Float32Array(3);
+    encodePickColor(index, rgb, 0);
+    const i = (row * W + col) * 4;
+    buf[i] = Math.round(rgb[0] * 255);
+    buf[i + 1] = Math.round(rgb[1] * 255);
+    buf[i + 2] = Math.round(rgb[2] * 255);
+    buf[i + 3] = 255;
+  };
+
+  eq("empty window is a miss", nearestHit(blank()), -1);
+
+  {
+    const buf = blank();
+    put(buf, centre, centre, 42);
+    eq("dead centre hit", nearestHit(buf), 42);
+  }
+  {
+    // The whole point of the window: an off-centre node is still pickable.
+    // A 1x1 read returned -1 here, which is why hovering felt dead.
+    const buf = blank();
+    put(buf, centre + 4, centre - 3, 7);
+    eq("off-centre hit is found", nearestHit(buf), 7);
+  }
+  {
+    // Two candidates: the nearer one wins, so overlapping nodes resolve to the
+    // one the cursor is actually closest to rather than to buffer order.
+    const buf = blank();
+    put(buf, 0, 0, 100); // far corner
+    put(buf, centre + 1, centre, 200); // adjacent to centre
+    eq("nearest of two wins", nearestHit(buf), 200);
+  }
+  {
+    // Index 0 must survive the round trip here too: it encodes off-by-one
+    // precisely so it is not confused with the cleared background.
+    const buf = blank();
+    put(buf, centre, centre + 2, 0);
+    eq("node index 0 is pickable", nearestHit(buf), 0);
+  }
+  check("window is odd so a centre pixel exists", PICK_WINDOW % 2 === 1);
 }
 
 // --- empty graph ---

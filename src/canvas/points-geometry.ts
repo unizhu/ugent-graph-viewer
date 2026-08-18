@@ -209,6 +209,50 @@ export function decodePickColor(r: number, g: number, b: number): number {
   return id === 0 ? -1 : id - 1;
 }
 
+/**
+ * Side length, in device pixels, of the square read back when picking.
+ *
+ * A 1x1 read is pixel-exact, which sounds correct and feels broken: the drawn
+ * silhouette becomes the only hit target, so hovering a node about 11px across
+ * missed far more often than it hit. The mesh renderer this replaced raycast
+ * against sphere geometry and was much more forgiving. Reading a window and
+ * taking the nearest hit restores that tolerance at a fixed cost, independent
+ * of graph size.
+ *
+ * Odd, so there is an exact centre pixel.
+ */
+export const PICK_WINDOW = 13;
+
+/**
+ * The node whose drawn pixel lies nearest the centre of a pick readback.
+ *
+ * `buffer` is RGBA rows from `readRenderTargetPixels`, which returns them
+ * bottom-up. That does not matter here: distance to the centre is symmetric
+ * under a vertical flip, so the nearest hit is the same either way.
+ *
+ * Returns -1 when the window is empty.
+ */
+export function nearestHit(buffer: Uint8Array, window: number = PICK_WINDOW): number {
+  const centre = (window - 1) / 2;
+  let best = -1;
+  let bestDistance = Infinity;
+  for (let row = 0; row < window; row += 1) {
+    for (let col = 0; col < window; col += 1) {
+      const i = (row * window + col) * 4;
+      const index = decodePickColor(buffer[i], buffer[i + 1], buffer[i + 2]);
+      if (index < 0) continue;
+      const dx = col - centre;
+      const dy = row - centre;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    }
+  }
+  return best;
+}
+
 /** Per-node pick colours for the whole graph, `nodeCount * 3`. */
 export function packPickColors(nodeCount: number): Float32Array {
   const out = new Float32Array(nodeCount * RGB);

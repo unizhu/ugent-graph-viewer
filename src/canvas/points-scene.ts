@@ -14,7 +14,8 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  decodePickColor,
+  PICK_WINDOW,
+  nearestHit,
   packPickColors,
   writeLinkPositions,
   type PackedGraph,
@@ -84,8 +85,8 @@ export class PointsScene {
   private readonly controls: OrbitControls;
   private readonly materials: PointsMaterials;
   private readonly linkMaterial: LineBasicMaterial;
-  private readonly pickTarget = new WebGLRenderTarget(1, 1);
-  private readonly pickBuffer = new Uint8Array(4);
+  private readonly pickTarget = new WebGLRenderTarget(PICK_WINDOW, PICK_WINDOW);
+  private readonly pickBuffer = new Uint8Array(PICK_WINDOW * PICK_WINDOW * 4);
 
   private packed: PackedGraph | null = null;
   private nodePositions: Float32Array = new Float32Array(0);
@@ -455,12 +456,12 @@ export class PointsScene {
   }
 
   /**
-   * Read the node index under the cursor.
+   * Read the node index nearest the cursor.
    *
-   * Renders the picking scene into a 1x1 target using `setViewOffset` to
-   * select just the cursor's pixel, so the cost is one pixel regardless of
-   * graph size. A CPU alternative would have to project every node each move,
-   * and would not agree with the shader about point size.
+   * Renders the picking scene into a small window around the cursor using
+   * `setViewOffset`, so the cost is a fixed handful of pixels regardless of
+   * graph size. A CPU alternative would have to project every node on each
+   * move, and would not agree with the shader about point size or silhouette.
    */
   private pickAtPointer(): number {
     if (!this.pointerPx || !this.pickPoints) return -1;
@@ -468,25 +469,33 @@ export class PointsScene {
     const ratio = this.renderer.getPixelRatio();
     const width = Math.max(this.container.clientWidth, 1);
     const height = Math.max(this.container.clientHeight, 1);
+    const half = (PICK_WINDOW - 1) / 2;
 
     this.camera.setViewOffset(
       width * ratio,
       height * ratio,
-      Math.floor(x * ratio),
-      Math.floor(y * ratio),
-      1,
-      1,
+      Math.floor(x * ratio) - half,
+      Math.floor(y * ratio) - half,
+      PICK_WINDOW,
+      PICK_WINDOW,
     );
     this.renderer.setRenderTarget(this.pickTarget);
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.clear();
     this.renderer.render(this.pickScene, this.camera);
-    this.renderer.readRenderTargetPixels(this.pickTarget, 0, 0, 1, 1, this.pickBuffer);
+    this.renderer.readRenderTargetPixels(
+      this.pickTarget,
+      0,
+      0,
+      PICK_WINDOW,
+      PICK_WINDOW,
+      this.pickBuffer,
+    );
     this.renderer.setRenderTarget(null);
     this.renderer.setClearColor(0x000000, 0);
     this.camera.clearViewOffset();
 
-    return decodePickColor(this.pickBuffer[0], this.pickBuffer[1], this.pickBuffer[2]);
+    return nearestHit(this.pickBuffer);
   }
 
   private attachPointerHandlers(): void {

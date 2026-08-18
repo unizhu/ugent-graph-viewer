@@ -30,8 +30,6 @@ interface PointsCanvasProps {
   showStats?: boolean;
   /** Tooltip HTML for a node, reusing the mesh renderer's markup. */
   nodeLabel: (node: RenderNode) => string;
-  /** Whether hover highlights the first-hop neighbourhood at this graph size. */
-  highlightOnHover: boolean;
   /** Draw per-kind silhouettes instead of a uniform sphere. */
   nodeShapes: boolean;
 }
@@ -51,7 +49,6 @@ export function PointsCanvas({
   orbit,
   showStats = false,
   nodeLabel,
-  highlightOnHover,
   nodeShapes,
 }: PointsCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -65,8 +62,8 @@ export function PointsCanvas({
 
   // Latest values for the imperative callbacks, which are installed once when
   // the scene is created and must not capture a stale render's props.
-  const latest = useRef({ data, onNodeClick, nodeLabel, highlightOnHover });
-  latest.current = { data, onNodeClick, nodeLabel, highlightOnHover };
+  const latest = useRef({ data, onNodeClick, nodeLabel });
+  latest.current = { data, onNodeClick, nodeLabel };
 
   const pointerRef = useRef({ x: 0, y: 0 });
   const trackPointer = useCallback((event: React.PointerEvent) => {
@@ -86,13 +83,13 @@ export function PointsCanvas({
         const packed = packedRef.current;
         if (!packed || index < 0) {
           setHover(null);
-          if (latest.current.highlightOnHover) scene.setHighlight(-1);
+          scene.setHighlight(-1);
           return;
         }
         const node = latest.current.data.nodes[index];
         if (!node) return;
         setHover({ node, x: pointerRef.current.x, y: pointerRef.current.y });
-        if (latest.current.highlightOnHover) scene.setHighlight(index);
+        scene.setHighlight(index);
       },
       onClick: (index) => {
         const packed = packedRef.current;
@@ -183,11 +180,10 @@ export function PointsCanvas({
   useEffect(() => {
     const scene = sceneRef.current;
     const packed = packedRef.current;
-    if (!scene || !packed || !highlightOnHover) return;
-    if (!selectedNodeId) return;
+    if (!scene || !packed || !selectedNodeId) return;
     const index = packed.indexById.get(selectedNodeId);
     if (index !== undefined) scene.setHighlight(index);
-  }, [selectedNodeId, highlightOnHover]);
+  }, [selectedNodeId]);
 
   useEffect(() => {
     if (!showStats) {

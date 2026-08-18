@@ -121,9 +121,10 @@ export function GraphCanvas({
     ],
   );
 
-  // Quality tier for this graph size (see render-settings for the reasoning).
-  // Applies to both canvases: PointsCanvas skips the attribute writes, the 2D
-  // canvas skips the accessor sweep.
+  // Quality tier for the 2D canvas only. The 3D path highlights by rewriting
+  // the affected colour slots, which is O(degree), so it has no reason to shed
+  // the feature at scale -- and doing so left large graphs with no hover
+  // feedback at all.
   const highlightOnHover = hoverHighlightFor(graphData.nodes.length);
 
   // Hover highlights the node's first-hop neighbors and links.
@@ -333,7 +334,6 @@ export function GraphCanvas({
           orbit={orbit}
           showStats={showStats}
           nodeLabel={nodeLabel}
-          highlightOnHover={highlightOnHover}
           nodeShapes={nodeShapes}
         />
       )}
