@@ -64,6 +64,44 @@ interface HandoffMessage {
   node?: string | null;
 }
 
+/**
+ * The `error` codes the console's data route emits for a session that is
+ * genuinely unusable, as opposed to an engine error it passes through.
+ *
+ * Mirrors the console's `src/app/api/graph/data/route.ts`; the two files have
+ * to agree. A code absent from this list is treated as an engine/console
+ * refusal, which is the safer default: re-minting cannot fix authorization,
+ * so retrying it would only hide the real reason behind an expiry message.
+ */
+const SESSION_GONE_CODES = new Set(["session_gone", "expired"]);
+
+/**
+ * The `error` code from a JSON error body, or `null` when the body is absent
+ * or unparseable.
+ */
+export async function readErrorCode(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as unknown;
+    if (!body || typeof body !== "object") return null;
+    const code = (body as Record<string, unknown>).error;
+    return typeof code === "string" && code.length > 0 ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a 401 means "this session is dead, re-mint" rather than "the
+ * request was refused".
+ *
+ * `null` (no readable code) counts as session-gone: that is the behaviour
+ * every 401 had before codes were consulted, so an unreadable body degrades
+ * to the old path rather than to a new one.
+ */
+export function isSessionGoneCode(code: string | null): boolean {
+  return code === null || SESSION_GONE_CODES.has(code);
+}
+
 function isHandoffMessage(data: unknown): data is HandoffMessage {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
@@ -147,7 +185,18 @@ export function createHandoff(onState: (state: HandoffState) => void): HandoffCo
       const { dataUrl } = (await redeemRes.json()) as { dataUrl: string };
 
       const dataRes = await fetch(`${consoleOrigin}${dataUrl}`, { method: "GET" });
-      if (dataRes.status === 401) return recoverOrExpire();
+      if (dataRes.status === 401) {
+        // 401 from the data route is two different failures wearing one
+        // status: the session really is gone, or the console passed through
+        // an engine refusal. Retrying only helps the first. Treating both as
+        // expiry re-ran the whole handshake and then blamed the session for
+        // an authorization error -- which is exactly how an engine
+        // `require_actor` rejection surfaced as "Session expired".
+        const code = await readErrorCode(dataRes);
+        if (isSessionGoneCode(code)) return recoverOrExpire();
+        onState({ status: "error", reason: `the console refused the data request (${code})` });
+        return;
+      }
       if (dataRes.status === 403) {
         onState({ status: "forbidden" });
         return;
