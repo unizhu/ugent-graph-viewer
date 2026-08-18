@@ -56,11 +56,19 @@ import {
   saveNodeShapes,
 } from "../canvas/render-settings";
 
-// Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
-// nodes are revealed in batches so the first frame is fast and the UI stays
-// responsive: the canvas seeds with PROGRESSIVE_INITIAL_BATCH highest-degree
-// nodes, then adds PROGRESSIVE_BATCH_STEP more every PROGRESSIVE_INTERVAL_MS
-// until the whole graph is shown. Tunable constants.
+// Progressive loading (R18), 2D only.
+//
+// Graphs with more than PROGRESSIVE_THRESHOLD nodes are revealed in batches so
+// the first frame is fast and the UI stays responsive: the canvas seeds with
+// PROGRESSIVE_INITIAL_BATCH highest-degree nodes, then adds
+// PROGRESSIVE_BATCH_STEP more every PROGRESSIVE_INTERVAL_MS until the whole
+// graph is shown. Tunable constants.
+//
+// The 3D path opts out. It draws the whole graph in two draw calls, so it has
+// nothing to gain — and every step changes `revealLimit`, which rebuilds
+// graphData, which repacks the buffers and restarts the force layout in a new
+// worker. On a large workspace that restart storm cost far more than the ramp
+// ever saved, and it is what made a big graph take seconds to settle.
 const PROGRESSIVE_THRESHOLD = 1500;
 const PROGRESSIVE_INITIAL_BATCH = 800;
 const PROGRESSIVE_BATCH_STEP = 600;
@@ -161,6 +169,12 @@ export function App() {
   useEffect(() => saveOrbit(orbit), [orbit]);
   useEffect(() => saveShowStats(showStats), [showStats]);
   useEffect(() => saveNodeShapes(nodeShapes), [nodeShapes]);
+
+  // `loadViewport` needs the current render mode but must keep a stable
+  // identity: it feeds `beginLoad`, which the console-handoff effect depends
+  // on, and re-creating that effect tears down and re-runs the handshake.
+  const renderModeRef = useRef(renderMode);
+  renderModeRef.current = renderMode;
 
   // View mode (code/memory), persisted (R3). Both datasets may stay loaded in
   // memory; toggling swaps which one drives the canvas + panels, no reload.
@@ -266,12 +280,16 @@ export function App() {
       const infos = buildCommunityInfo(g, communityColors);
       setCommunities(infos);
 
-      // Progressive loading (R18): for large graphs, seed the canvas with an
-      // initial batch and let the ramp effect grow it; small graphs render in
-      // full immediately.
+      // Progressive loading (R18): for large graphs in 2D, seed the canvas
+      // with an initial batch and let the ramp effect grow it. Small graphs,
+      // and every graph in 3D, render in full immediately.
       const nodeCount = g.order;
+      const willRender3d =
+        choice === "threed" || (choice !== "twod" && renderModeRef.current === "3d");
       setTotalNodeCount(nodeCount);
-      setRevealLimit(nodeCount > PROGRESSIVE_THRESHOLD ? PROGRESSIVE_INITIAL_BATCH : undefined);
+      setRevealLimit(
+        !willRender3d && nodeCount > PROGRESSIVE_THRESHOLD ? PROGRESSIVE_INITIAL_BATCH : undefined,
+      );
 
       setGraph(g);
       setLoadingPhase("");
@@ -303,7 +321,15 @@ export function App() {
   // by PROGRESSIVE_BATCH_STEP on an interval until the whole graph is shown,
   // then clear the cap. Chunked insertion happens in the canvas memo, which
   // re-derives graphData from the new limit while keeping node positions.
+  // Switching into 3D drops any cap the 2D path had built up, so the graph is
+  // whole the moment the mode changes rather than resuming a ramp that the 3D
+  // renderer would only pay to restart.
   useEffect(() => {
+    if (renderMode === "3d") setRevealLimit(undefined);
+  }, [renderMode]);
+
+  useEffect(() => {
+    if (renderMode === "3d") return;
     if (revealLimit === undefined || revealLimit >= totalNodeCount) return;
     const timer = window.setInterval(() => {
       setRevealLimit((prev) => {
@@ -313,7 +339,7 @@ export function App() {
       });
     }, PROGRESSIVE_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [revealLimit, totalNodeCount]);
+  }, [revealLimit, totalNodeCount, renderMode]);
 
   // Deep link: ?node=<id> focuses a node once the graph loads (R13). The
   // console may also send a focus node inside the handoff payload; whichever
