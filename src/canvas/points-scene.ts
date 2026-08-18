@@ -47,6 +47,24 @@ const ORBIT_RADIANS_PER_SECOND = 0.08;
 /** Camera distance as a multiple of the graph's bounding radius. */
 const FIT_DISTANCE_FACTOR = 2.2;
 
+/**
+ * On-screen diameter, in device pixels, a median node should have once the
+ * camera has framed the graph.
+ *
+ * Node sizes come from `nodeSize(degree)` in world units, which the mesh
+ * renderer turned into sphere radii. Points are sized in pixels instead, and
+ * the force layout's extent varies by orders of magnitude with node count — a
+ * 2000-node graph spreads over thousands of world units, putting the fitted
+ * camera far enough away that an uncalibrated node computes to under a pixel
+ * and disappears while its links stay visible. Calibrating against the actual
+ * layout makes node size independent of that extent.
+ */
+const TARGET_MEDIAN_NODE_PIXELS = 11;
+
+/** Bounds on the calibration, so a degenerate layout cannot fill the screen. */
+const MIN_SIZE_SCALE = 0.05;
+const MAX_SIZE_SCALE = 500;
+
 export interface PointsSceneStats {
   calls: number;
   triangles: number;
@@ -73,6 +91,8 @@ export class PointsScene {
   private nodePositions: Float32Array = new Float32Array(0);
   private baseNodeColors: Float32Array = new Float32Array(0);
   private baseLinkColors: Float32Array = new Float32Array(0);
+  /** Median of nodeSizes, the reference point for size calibration. */
+  private medianNodeSize = 0;
 
   private positionAttr: BufferAttribute | null = null;
   private nodeColorAttr: BufferAttribute | null = null;
@@ -107,7 +127,18 @@ export class PointsScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x000000, 0);
     container.appendChild(this.renderer.domElement);
-    this.renderer.domElement.style.display = "block";
+
+    // Pin the canvas to the container in CSS rather than letting it lay out at
+    // its attribute size. A canvas with no CSS size renders at
+    // `width`/`height`, which `setSize` multiplies by the device pixel ratio —
+    // on a 2x display that is a canvas twice the container's size, anchored
+    // top-left, with the centred graph pushed off the bottom-right corner.
+    const canvasStyle = this.renderer.domElement.style;
+    canvasStyle.display = "block";
+    canvasStyle.position = "absolute";
+    canvasStyle.inset = "0";
+    canvasStyle.width = "100%";
+    canvasStyle.height = "100%";
 
     this.camera = new PerspectiveCamera(FOV_DEGREES, 1, NEAR, FAR);
     this.camera.position.set(0, 0, 500);
@@ -136,6 +167,7 @@ export class PointsScene {
     this.nodePositions = new Float32Array(nodeCount * 3);
     this.baseNodeColors = packed.nodeColors;
     this.baseLinkColors = packed.linkColors;
+    this.medianNodeSize = medianOf(packed.nodeSizes);
 
     // Position and size are shared by the display and picking geometries: one
     // buffer, two views, so a position update cannot leave picking stale.
@@ -178,6 +210,12 @@ export class PointsScene {
     this.lines = new LineSegments(linkGeometry, this.linkMaterial);
     this.lines.frustumCulled = false;
     this.scene.add(this.lines);
+
+    // Show something before the first layout message, and keep showing it if
+    // that message never comes. Left at zero, every node would sit exactly on
+    // the origin, which is indistinguishable from a renderer that is broken.
+    this.setPositions(seedPositions(nodeCount));
+    this.fitCamera();
   }
 
   /** Push new node positions; link endpoints follow automatically. */
@@ -201,6 +239,24 @@ export class PointsScene {
     this.camera.position.set(0, 0, distance);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    this.calibrateNodeScale(distance);
+  }
+
+  /**
+   * Choose the node size multiplier so a median node lands at
+   * {@link TARGET_MEDIAN_NODE_PIXELS} once framed.
+   *
+   * Solving `pixels = size * scale * pixelsPerUnit / distance` for scale. Set
+   * at fit time rather than per frame so zooming still grows and shrinks nodes
+   * naturally; this only picks the baseline.
+   */
+  private calibrateNodeScale(distance: number): void {
+    if (this.medianNodeSize <= 0) return;
+    const height = this.renderer.domElement.height;
+    if (height <= 0) return;
+    const pixelsPerUnit = pixelsPerUnitFor(height, FOV_DEGREES, 1);
+    const scale = (TARGET_MEDIAN_NODE_PIXELS * distance) / (this.medianNodeSize * pixelsPerUnit);
+    this.materials.setSizeScale(Math.min(MAX_SIZE_SCALE, Math.max(MIN_SIZE_SCALE, scale)));
   }
 
   private boundingRadius(): number {
@@ -311,12 +367,29 @@ export class PointsScene {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     if (width === 0 || height === 0) return;
-    this.renderer.setSize(width, height, false);
+    // updateStyle left at its default so three sets the canvas CSS size to
+    // match; the explicit styles in the constructor are the belt to this
+    // brace. Passing false here is what made the graph render off-screen.
+    this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.materials.setPixelsPerUnit(
-      pixelsPerUnitFor(height, FOV_DEGREES, this.renderer.getPixelRatio()),
-    );
+    this.syncPointScale();
+  }
+
+  /**
+   * Keep the point-size uniform in step with the drawing buffer.
+   *
+   * Recomputed per frame rather than only on resize: the uniform starts at 1,
+   * which yields sub-pixel points, so any path where `resize()` has not run
+   * yet — a container measuring zero at construction, a missed observer —
+   * renders an invisible graph. One division per frame buys immunity to that
+   * whole class of ordering bug.
+   */
+  private syncPointScale(): void {
+    const height = this.renderer.domElement.height;
+    if (height <= 0) return;
+    // domElement.height is already in device pixels, so the ratio is folded in.
+    this.materials.setPixelsPerUnit(pixelsPerUnitFor(height, FOV_DEGREES, 1));
   }
 
   start(): void {
@@ -371,6 +444,7 @@ export class PointsScene {
       );
     }
 
+    this.syncPointScale();
     this.controls.update();
     if (this.pickPending) {
       this.pickPending = false;
@@ -475,6 +549,36 @@ export class PointsScene {
     this.renderer.dispose();
     el.remove();
   }
+}
+
+/**
+ * Deterministic scatter on a sphere, used until the force layout reports.
+ *
+ * Golden-angle (phyllotaxis) placement, the same idea d3-force uses to seed
+ * its own simulation: it spreads evenly with no clumping and no randomness,
+ * so a screenshot of a failed layout is reproducible.
+ */
+function seedPositions(nodeCount: number): Float32Array {
+  const out = new Float32Array(nodeCount * 3);
+  if (nodeCount === 0) return out;
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const radius = 10 * Math.sqrt(nodeCount);
+  for (let i = 0; i < nodeCount; i += 1) {
+    const y = nodeCount === 1 ? 0 : 1 - (i / (nodeCount - 1)) * 2;
+    const ring = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = goldenAngle * i;
+    out[i * 3] = Math.cos(theta) * ring * radius;
+    out[i * 3 + 1] = y * radius;
+    out[i * 3 + 2] = Math.sin(theta) * ring * radius;
+  }
+  return out;
+}
+
+/** Median of a numeric buffer; 0 for an empty one. */
+function medianOf(values: Float32Array): number {
+  if (values.length === 0) return 0;
+  const sorted = Float32Array.from(values).sort();
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
 function pushInto(map: Map<number, number[]>, key: number, value: number): void {

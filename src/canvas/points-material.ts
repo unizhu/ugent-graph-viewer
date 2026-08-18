@@ -151,6 +151,8 @@ export interface PointsMaterials {
   picking: ShaderMaterial;
   /** Update both materials after a resize or camera FOV change. */
   setPixelsPerUnit(value: number): void;
+  /** Global multiplier on node size, calibrated to the layout's extent. */
+  setSizeScale(value: number): void;
   /** Draw per-kind silhouettes (true) or a uniform sphere for every node. */
   setShapesEnabled(enabled: boolean): void;
   dispose(): void;
@@ -217,6 +219,10 @@ export function createPointsMaterials(options?: {
     setPixelsPerUnit(value: number) {
       display.uniforms.pixelsPerUnit.value = value;
       picking.uniforms.pixelsPerUnit.value = value;
+    },
+    setSizeScale(value: number) {
+      display.uniforms.sizeScale.value = value;
+      picking.uniforms.sizeScale.value = value;
     },
     setShapesEnabled(enabled: boolean) {
       const value = enabled ? 1 : 0;

@@ -81,6 +81,7 @@ export function RenderControls({
           disabled={!is3d}
           onClick={() => onOrbitChange({ ...orbit, enabled: !orbit.enabled })}
           aria-pressed={orbit.enabled}
+          aria-label="Auto-orbit"
           className="w-9 h-5 rounded-full transition-colors relative"
           style={{
             background: is3d && orbit.enabled ? "var(--gv-accent)" : "var(--gv-border)",
@@ -116,6 +117,7 @@ export function RenderControls({
           disabled={!is3d}
           onClick={() => onNodeShapesChange(!nodeShapes)}
           aria-pressed={nodeShapes}
+          aria-label="Node shapes"
           className="w-9 h-5 rounded-full transition-colors relative"
           style={{
             background: is3d && nodeShapes ? "var(--gv-accent)" : "var(--gv-border)",
@@ -151,6 +153,7 @@ export function RenderControls({
           disabled={!is3d}
           onClick={() => onShowStatsChange(!showStats)}
           aria-pressed={showStats}
+          aria-label="Render stats"
           className="w-9 h-5 rounded-full transition-colors relative"
           style={{
             background: is3d && showStats ? "var(--gv-accent)" : "var(--gv-border)",
