@@ -226,6 +226,13 @@ export function App() {
       setWorkspaces(viewport.codebases);
       setStats(viewport.stats);
       setSelectedNode(null);
+      // Loading a code viewport puts the app in code mode, mirroring
+      // `loadMemoryText`. Without this, `viewMode` persisted as "memory" in
+      // localStorage survives into a code load: the sidebar falls back to the
+      // code FilterPanel (memoryStats is null) while the canvas matches
+      // neither branch and sits on "Loading graph..." forever, with the data
+      // fully loaded behind it.
+      setViewMode("code");
       graphRef.current = g;
 
       // Reset filters. Default to code kinds (function/struct/...) for code
