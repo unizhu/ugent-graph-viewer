@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsx src/graph/memory-loader.test.ts && tsx src/handoff/handoff.test.ts && tsx src/canvas/render-settings.test.ts"
+    "test": "tsx src/graph/memory-loader.test.ts && tsx src/handoff/handoff.test.ts && tsx src/canvas/render-settings.test.ts && tsx src/canvas/layout.test.ts && tsx src/canvas/points-geometry.test.ts"
   },
   "dependencies": {
+    "d3-force-3d": "3.0.6",
     "graphology": "0.26.0",
     "graphology-communities-louvain": "^2.0.2",
     "graphology-layout-forceatlas2": "0.10.1",

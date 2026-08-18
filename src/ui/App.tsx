@@ -52,6 +52,8 @@ import {
   saveViewMode,
   loadShowStats,
   saveShowStats,
+  loadNodeShapes,
+  saveNodeShapes,
 } from "../canvas/render-settings";
 
 // Progressive loading (R18). Graphs with more than PROGRESSIVE_THRESHOLD
@@ -154,9 +156,11 @@ export function App() {
   const [renderMode, setRenderMode] = useState<RenderMode>(() => loadRenderMode());
   const [orbit, setOrbit] = useState<OrbitSettings>(() => loadOrbit());
   const [showStats, setShowStats] = useState<boolean>(() => loadShowStats());
+  const [nodeShapes, setNodeShapes] = useState<boolean>(() => loadNodeShapes());
   useEffect(() => saveRenderMode(renderMode), [renderMode]);
   useEffect(() => saveOrbit(orbit), [orbit]);
   useEffect(() => saveShowStats(showStats), [showStats]);
+  useEffect(() => saveNodeShapes(nodeShapes), [nodeShapes]);
 
   // View mode (code/memory), persisted (R3). Both datasets may stay loaded in
   // memory; toggling swaps which one drives the canvas + panels, no reload.
@@ -618,6 +622,8 @@ export function App() {
             onOrbitChange={setOrbit}
             showStats={showStats}
             onShowStatsChange={setShowStats}
+            nodeShapes={nodeShapes}
+            onNodeShapesChange={setNodeShapes}
           />
         </div>
 
@@ -745,6 +751,7 @@ export function App() {
             mode={renderMode}
             orbit={orbit}
             showStats={showStats}
+            nodeShapes={nodeShapes}
           />
         ) : viewMode !== "memory" && graph ? (
           <GraphCanvas
@@ -758,6 +765,7 @@ export function App() {
             mode={renderMode}
             orbit={orbit}
             showStats={showStats}
+            nodeShapes={nodeShapes}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: "var(--gv-text-secondary)" }}>Loading graph...</div>

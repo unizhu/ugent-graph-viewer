@@ -1,5 +1,4 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from "react";
-import ForceGraph3D from "react-force-graph-3d";
 import ForceGraph2D from "react-force-graph-2d";
 import Graph from "graphology";
 import type { FilterState, MemoryFilterState, ViewMode } from "../types";
@@ -14,12 +13,11 @@ import {
 } from "./graph-data";
 import {
   arrowsEnabledFor,
-  cylinderLinksFor,
   hoverHighlightFor,
-  nodeResolutionFor,
   type OrbitSettings,
   type RenderMode,
 } from "./render-settings";
+import { PointsCanvas } from "./PointsCanvas";
 
 interface GraphCanvasProps {
   graph: Graph;
@@ -42,6 +40,8 @@ interface GraphCanvasProps {
   orbit: OrbitSettings;
   /** Show the 3D render statistics overlay (draw calls / triangles / fps). */
   showStats?: boolean;
+  /** Draw per-kind node silhouettes in 3D. */
+  nodeShapes?: boolean;
 }
 
 const DIM_NODE = "rgba(107, 114, 128, 0.15)";
@@ -60,6 +60,7 @@ export function GraphCanvas({
   mode,
   orbit,
   showStats = false,
+  nodeShapes = true,
 }: GraphCanvasProps) {
   const isMemory = viewMode === "memory";
   const fgRef = useRef<any>(null);
@@ -69,8 +70,6 @@ export function GraphCanvas({
   const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
   const [highlightLinks, setHighlightLinks] = useState<Set<string>>(new Set());
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [userInteracted, setUserInteracted] = useState(false);
-  const interactionTimeoutRef = useRef<any>(null);
 
   // Track container size (accounts for the sidebar) for both canvases.
   useEffect(() => {
@@ -86,18 +85,8 @@ export function GraphCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // Pause auto-orbit for 15s after any manual camera interaction.
-  const handleUserInteraction = useCallback(() => {
-    setUserInteracted(true);
-    if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
-    interactionTimeoutRef.current = setTimeout(() => setUserInteracted(false), 15000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
-    };
-  }, []);
+  // Orbit and its interaction pause moved into PointsScene, which owns the 3D
+  // camera. The 2D canvas never orbited, so nothing here tracks interaction.
 
   // Build render nodes/links from the graphology graph, capped for progressive
   // loading. Shared by both render modes (see graph-data.ts). Memo keys on the
@@ -132,8 +121,9 @@ export function GraphCanvas({
     ],
   );
 
-  // Quality tiers for this graph size (see render-settings for the reasoning).
-  const cylinderLinks = cylinderLinksFor(graphData.links.length);
+  // Quality tier for this graph size (see render-settings for the reasoning).
+  // Applies to both canvases: PointsCanvas skips the attribute writes, the 2D
+  // canvas skips the accessor sweep.
   const highlightOnHover = hoverHighlightFor(graphData.nodes.length);
 
   // Hover highlights the node's first-hop neighbors and links.
@@ -207,9 +197,11 @@ export function GraphCanvas({
     [onNodeClick, mode],
   );
 
-  // Deep-link / handoff focus (R13): fly to the node once layout positions it.
+  // Deep-link / handoff focus (R13) for the 2D canvas: fly to the node once
+  // the layout has positioned it. 3D focus is handled by PointsCanvas, which
+  // knows its own camera and does not need to poll for coordinates.
   useEffect(() => {
-    if (!focusNodeId) return;
+    if (mode === "3d" || !focusNodeId) return;
     let cancelled = false;
     let attempts = 0;
 
@@ -219,20 +211,10 @@ export function GraphCanvas({
       const node = fgRef.current
         ?.graphData?.()
         ?.nodes?.find((n: any) => n.id === focusNodeId);
-      const positioned = node && (node.x !== undefined || node.y !== undefined || node.z !== undefined);
+      const positioned = node && (node.x !== undefined || node.y !== undefined);
       if (positioned) {
-        if (mode === "3d") {
-          const distance = 80;
-          const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-          fgRef.current?.cameraPosition(
-            { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
-            node,
-            1500,
-          );
-        } else {
-          fgRef.current?.centerAt(node.x || 0, node.y || 0, 1000);
-          fgRef.current?.zoom(4, 1000);
-        }
+        fgRef.current?.centerAt(node.x || 0, node.y || 0, 1000);
+        fgRef.current?.zoom(4, 1000);
         onNodeClick(node.id);
         onFocusHandled?.();
         return;
@@ -250,79 +232,6 @@ export function GraphCanvas({
       window.clearTimeout(start);
     };
   }, [focusNodeId, onNodeClick, onFocusHandled, mode]);
-
-  // Auto-orbit (3D only, R2): runs only when enabled, at the configured
-  // interval, and pauses while hovering / a node is selected / after manual
-  // interaction. When disabled no timer runs, so there is no idle re-render.
-  useEffect(() => {
-    if (mode !== "3d" || !orbit.enabled) return;
-    if (!fgRef.current) return;
-
-    let angle = 0;
-    let initialized = false;
-
-    const interval = setInterval(() => {
-      if (hoveredNode || selectedNodeId || userInteracted) {
-        initialized = false;
-        return;
-      }
-      if (!initialized) {
-        const currentPos = fgRef.current?.cameraPosition?.();
-        if (currentPos) {
-          angle = Math.atan2(currentPos.x, currentPos.z);
-          initialized = true;
-        }
-      }
-      angle += 0.001;
-      const distance = 350;
-      fgRef.current?.cameraPosition({
-        x: distance * Math.sin(angle),
-        z: distance * Math.cos(angle),
-      });
-    }, orbit.intervalMs);
-
-    return () => clearInterval(interval);
-  }, [mode, orbit.enabled, orbit.intervalMs, hoveredNode, selectedNodeId, userInteracted]);
-
-  // Render statistics for the 3D path. Draw calls are the figure that decides
-  // whether this renderer can carry a graph this size: three-forcegraph makes
-  // one object per node and per link, so the count tracks node+link count
-  // rather than anything about the scene's complexity.
-  //
-  // `renderer.info.render.calls` is per-frame and reset by three each frame, so
-  // sampling it on an interval reads the most recent frame. The rate shown is
-  // requestAnimationFrame callbacks per second, which tracks the render loop
-  // but is not identical to it -- it is a health indicator, not a benchmark.
-  const [renderStats, setRenderStats] = useState<{
-    calls: number;
-    triangles: number;
-    fps: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!showStats || mode !== "3d") {
-      setRenderStats(null);
-      return;
-    }
-    let frames = 0;
-    let raf = requestAnimationFrame(function tick() {
-      frames += 1;
-      raf = requestAnimationFrame(tick);
-    });
-    const sample = window.setInterval(() => {
-      const info = fgRef.current?.renderer?.()?.info?.render;
-      setRenderStats({
-        calls: info?.calls ?? 0,
-        triangles: info?.triangles ?? 0,
-        fps: frames,
-      });
-      frames = 0;
-    }, 1000);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.clearInterval(sample);
-    };
-  }, [showStats, mode]);
 
   // Theme-derived canvas chrome, read at render (theme is applied before load).
   const theme = currentTheme();
@@ -355,19 +264,12 @@ export function GraphCanvas({
   const linkWidth = useCallback(
     (link: RenderLink) => {
       const baseWidth = Math.max(0.5, link.confidence * 1.5);
-      // Past the tier, everything unhighlighted must be EXACTLY 0: that is what
-      // makes three-forcegraph build a 2-vertex unlit Line rather than a
-      // CylinderGeometry mesh with a lit material. A small non-zero "dimmed"
-      // width looks thinner but costs the same as a full cylinder.
-      if (!cylinderLinks) {
-        return highlightLinks.has(link.id) ? baseWidth * 1.5 : 0;
-      }
       if (highlightNodes.size > 0) {
         return highlightLinks.has(link.id) ? baseWidth * 1.5 : 0.2;
       }
       return baseWidth;
     },
-    [highlightNodes, highlightLinks, cylinderLinks],
+    [highlightNodes, highlightLinks],
   );
 
   const nodeLabel = useCallback(
@@ -386,15 +288,15 @@ export function GraphCanvas({
       ">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
           <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${node.color};"></span>
-          <span style="font-weight: 700; color: ${theme.tokens.textPrimary}; font-size: 13px;">${node.label}</span>
+          <span style="font-weight: 700; color: ${theme.tokens.textPrimary}; font-size: 13px;">${escapeHtml(node.label)}</span>
         </div>
         <div style="font-size: 11px; color: ${theme.tokens.textSecondary}; margin-bottom: 4px;">
           <span style="color: ${theme.tokens.textSecondary}; font-weight: 500;">Kind:</span>
-          <span style="font-family: monospace; background: ${theme.tokens.surface}; padding: 1px 4px; border-radius: 4px; color: ${theme.tokens.accent};">${node.kind}</span>
+          <span style="font-family: monospace; background: ${theme.tokens.surface}; padding: 1px 4px; border-radius: 4px; color: ${theme.tokens.accent};">${escapeHtml(node.kind)}</span>
         </div>
         ${
           node.filePath
-            ? `<div style="font-size: 10px; color: ${theme.tokens.textSecondary}; font-family: monospace; word-break: break-all; border-top: 1px solid ${theme.tokens.border}; padding-top: 4px; margin-top: 4px;">${node.filePath}</div>`
+            ? `<div style="font-size: 10px; color: ${theme.tokens.textSecondary}; font-family: monospace; word-break: break-all; border-top: 1px solid ${theme.tokens.border}; padding-top: 4px; margin-top: 4px;">${escapeHtml(node.filePath)}</div>`
             : ""
         }
       </div>
@@ -410,9 +312,8 @@ export function GraphCanvas({
     [],
   );
 
-  // Geometry shedding for large 3D graphs; thresholds live in render-settings.
+  // 2D sheds arrow cones on dense graphs; the 3D path draws no arrows at all.
   const arrowsOn = arrowsEnabledFor(graphData.links.length);
-  const nodeRes = nodeResolutionFor(graphData.nodes.length);
 
   const ready = dimensions.width > 0 && dimensions.height > 0;
 
@@ -421,35 +322,19 @@ export function GraphCanvas({
       ref={containerRef}
       className="w-full h-full relative"
       style={{ background: canvasBg }}
-      onMouseDown={handleUserInteraction}
-      onTouchStart={handleUserInteraction}
-      onPointerDown={handleUserInteraction}
-      onWheel={handleUserInteraction}
     >
-      {ready && mode === "3d" && (
-        <ForceGraph3D
-          ref={fgRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          graphData={graphData}
-          backgroundColor="rgba(0, 0, 0, 0)"
-          nodeColor={nodeColor}
-          nodeVal={nodeVal}
-          nodeResolution={nodeRes}
+      {mode === "3d" && (
+        <PointsCanvas
+          data={graphData}
+          onNodeClick={onNodeClick}
+          selectedNodeId={selectedNodeId}
+          focusNodeId={focusNodeId}
+          onFocusHandled={onFocusHandled}
+          orbit={orbit}
+          showStats={showStats}
           nodeLabel={nodeLabel}
-          linkColor={linkColor}
-          linkWidth={linkWidth}
-          linkDirectionalArrowLength={arrowsOn ? 3.5 : 0}
-          linkDirectionalArrowRelPos={1}
-          linkDirectionalArrowColor={linkColor}
-          onNodeClick={handleNodeClick}
-          onNodeHover={handleNodeHover}
-          warmupTicks={60}
-          cooldownTicks={0}
-          // Ask for the discrete GPU on dual-GPU machines. antialias is
-          // already true by default in three-render-objects, so it is not
-          // repeated here.
-          rendererConfig={{ powerPreference: "high-performance" }}
+          highlightOnHover={highlightOnHover}
+          nodeShapes={nodeShapes}
         />
       )}
       {ready && mode === "2d" && (
@@ -473,23 +358,6 @@ export function GraphCanvas({
           warmupTicks={60}
           cooldownTicks={80}
         />
-      )}
-      {renderStats && (
-        <div
-          className="absolute top-2 right-2 px-2 py-1 rounded-md font-mono text-[10px] leading-tight pointer-events-none"
-          style={{
-            background: "var(--gv-surface-raised)",
-            border: "1px solid var(--gv-border)",
-            color: "var(--gv-text-secondary)",
-          }}
-        >
-          <div>{renderStats.calls.toLocaleString()} draw calls</div>
-          <div>{renderStats.triangles.toLocaleString()} tris</div>
-          <div>
-            {renderStats.fps} fps &middot; {graphData.nodes.length.toLocaleString()}n{" "}
-            {graphData.links.length.toLocaleString()}e
-          </div>
-        </div>
       )}
     </div>
   );

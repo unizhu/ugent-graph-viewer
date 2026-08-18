@@ -11,6 +11,8 @@ interface RenderControlsProps {
   onOrbitChange: (orbit: OrbitSettings) => void;
   showStats: boolean;
   onShowStatsChange: (show: boolean) => void;
+  nodeShapes: boolean;
+  onNodeShapesChange: (enabled: boolean) => void;
 }
 
 function intervalLabel(ms: number): string {
@@ -29,6 +31,8 @@ export function RenderControls({
   onOrbitChange,
   showStats,
   onShowStatsChange,
+  nodeShapes,
+  onNodeShapesChange,
 }: RenderControlsProps) {
   const is3d = mode === "3d";
 
@@ -88,6 +92,41 @@ export function RenderControls({
           <span
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
               orbit.enabled ? "left-[18px]" : "left-0.5"
+            }`}
+            style={{ border: "1px solid rgba(0,0,0,0.15)" }}
+          />
+        </button>
+      </div>
+
+      {/* Per-kind node silhouettes (3D only) */}
+      <div className="flex items-center justify-between">
+        <span
+          className="text-xs font-semibold"
+          style={{ color: is3d ? "var(--gv-text-secondary)" : "var(--gv-border)" }}
+          title={
+            is3d
+              ? "Draw files, modules and types with distinct silhouettes instead of all spheres"
+              : "Node shapes are only available in 3D"
+          }
+        >
+          Node shapes
+        </span>
+        <button
+          type="button"
+          disabled={!is3d}
+          onClick={() => onNodeShapesChange(!nodeShapes)}
+          aria-pressed={nodeShapes}
+          className="w-9 h-5 rounded-full transition-colors relative"
+          style={{
+            background: is3d && nodeShapes ? "var(--gv-accent)" : "var(--gv-border)",
+            border: "1px solid var(--gv-border)",
+            opacity: is3d ? 1 : 0.5,
+            cursor: is3d ? "pointer" : "not-allowed",
+          }}
+        >
+          <span
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+              nodeShapes ? "left-[18px]" : "left-0.5"
             }`}
             style={{ border: "1px solid rgba(0,0,0,0.15)" }}
           />

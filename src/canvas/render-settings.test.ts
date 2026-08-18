@@ -14,13 +14,9 @@
  */
 import {
   ARROWS_OFF_ABOVE_LINKS,
-  FLAT_LINKS_ABOVE_LINKS,
   HOVER_HIGHLIGHT_MAX_NODES,
-  LOW_RES_ABOVE_NODES,
   arrowsEnabledFor,
-  cylinderLinksFor,
   hoverHighlightFor,
-  nodeResolutionFor,
 } from "./render-settings.ts";
 
 let passed = 0;
@@ -33,21 +29,6 @@ function check(name: string, cond: boolean): void {
     failed += 1;
     console.error(`  FAIL: ${name}`);
   }
-}
-
-function eq<T>(name: string, actual: T, expected: T): void {
-  const ok = actual === expected;
-  if (!ok) console.error(`  (${name}) expected ${String(expected)}, got ${String(actual)}`);
-  check(name, ok);
-}
-
-// --- cylinderLinksFor: inclusive at the threshold, off above it ---
-{
-  check("small graph keeps cylinders", cylinderLinksFor(0));
-  check("at the threshold still cylinders", cylinderLinksFor(FLAT_LINKS_ABOVE_LINKS));
-  check("one over goes flat", !cylinderLinksFor(FLAT_LINKS_ABOVE_LINKS + 1));
-  // The real workspaces this exists for: ~10k nodes carry ~18k links.
-  check("18k links go flat", !cylinderLinksFor(18_000));
 }
 
 // --- hoverHighlightFor ---
@@ -64,22 +45,6 @@ function eq<T>(name: string, actual: T, expected: T): void {
   check("arrows on for a small graph", arrowsEnabledFor(100));
   check("arrows on at the threshold", arrowsEnabledFor(ARROWS_OFF_ABOVE_LINKS));
   check("arrows off above it", !arrowsEnabledFor(ARROWS_OFF_ABOVE_LINKS + 1));
-}
-
-// --- nodeResolutionFor ---
-{
-  eq("small graph resolution", nodeResolutionFor(100), 6);
-  eq("at the threshold", nodeResolutionFor(LOW_RES_ABOVE_NODES), 6);
-  eq("above the threshold", nodeResolutionFor(LOW_RES_ABOVE_NODES + 1), 4);
-}
-
-// --- tier ordering: the cheaper degradations must engage first ---
-{
-  // Arrows are the least useful and go first; flat links next; hover highlight
-  // last because losing it is the most noticeable. A future edit that reorders
-  // these would degrade the wrong thing first.
-  check("arrows shed before flat links", ARROWS_OFF_ABOVE_LINKS < FLAT_LINKS_ABOVE_LINKS);
-  check("low-res spheres shed before hover", LOW_RES_ABOVE_NODES < HOVER_HIGHLIGHT_MAX_NODES);
 }
 
 // --- summary ---

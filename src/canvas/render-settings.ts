@@ -21,6 +21,7 @@ const MODE_KEY = "gv:render-mode";
 const ORBIT_KEY = "gv:orbit";
 const VIEW_MODE_KEY = "gv:view-mode";
 const STATS_KEY = "gv:show-stats";
+const SHAPES_KEY = "gv:node-shapes";
 
 function safeGet(key: string): string | null {
   try {
@@ -91,35 +92,35 @@ export function saveShowStats(show: boolean): void {
   safeSet(STATS_KEY, String(show));
 }
 
+/**
+ * Persisted toggle for per-kind node silhouettes (3D). On by default.
+ *
+ * Shape is a second encoding channel alongside colour and, unlike colour, it
+ * survives colour-blindness and a dark background. Off falls back to a uniform
+ * sphere for every node.
+ */
+export function loadNodeShapes(): boolean {
+  return safeGet(SHAPES_KEY) !== "false";
+}
+
+export function saveNodeShapes(enabled: boolean): void {
+  safeSet(SHAPES_KEY, String(enabled));
+}
+
 // ---------------------------------------------------------------------------
 // Render quality tiers
 //
-// The 3D path sheds work as the graph grows. These live here rather than in
-// GraphCanvas so they can be unit tested without importing React and
-// react-force-graph, and so every threshold is visible in one place.
+// Kept here rather than in GraphCanvas so they can be unit tested without
+// importing React and react-force-graph, and so every threshold is visible in
+// one place.
 //
-// The cost they control is per object: three-forcegraph builds one Mesh per
-// node and one Mesh or Line per link, with no instancing, so a 10k-node
-// workspace is ~30k draw calls. Shedding geometry does not reduce that count --
-// only a different renderer does -- but it removes most of the triangles and
-// shading behind it.
+// The 3D path no longer sheds geometry: PointsCanvas draws the whole graph as
+// one Points and one LineSegments, so its cost barely moves with node count.
+// What remains is the 2D arrow tier, and the hover tier, which is about CPU
+// work per mouse move rather than geometry and so applies to both canvases.
 
-/** Above this many links, directional arrow cones are dropped. */
+/** Above this many links, directional arrow cones are dropped (2D only). */
 export const ARROWS_OFF_ABOVE_LINKS = 2500;
-
-/** Above this many nodes, sphere resolution drops from 6 to 4. */
-export const LOW_RES_ABOVE_NODES = 2000;
-
-/**
- * Above this many links, non-highlighted links render as flat lines.
- *
- * three-forcegraph picks its link object with `useCylinder =
- * !!widthAccessor(link)`: any non-zero width builds a CylinderGeometry mesh
- * with a lit MeshLambertMaterial, while zero builds a 2-vertex Line with an
- * unlit material. A width accessor that never returns zero therefore pays for
- * ~24 triangles and a lighting calculation on every link in the graph.
- */
-export const FLAT_LINKS_ABOVE_LINKS = 4000;
 
 /**
  * Above this many nodes, hover stops highlighting neighbors.
@@ -131,23 +132,9 @@ export const FLAT_LINKS_ABOVE_LINKS = 4000;
  */
 export const HOVER_HIGHLIGHT_MAX_NODES = 6000;
 
-/** Sphere segments for the given node count. */
-export function nodeResolutionFor(nodeCount: number): number {
-  return nodeCount > LOW_RES_ABOVE_NODES ? 4 : 6;
-}
-
 /** Whether directional arrow cones are affordable at this link count. */
 export function arrowsEnabledFor(linkCount: number): boolean {
   return linkCount <= ARROWS_OFF_ABOVE_LINKS;
-}
-
-/**
- * Whether links should render as cylinders (true) or flat lines (false).
- * Callers must return a width of exactly 0 when this is false; any other
- * value silently keeps the cylinder path.
- */
-export function cylinderLinksFor(linkCount: number): boolean {
-  return linkCount <= FLAT_LINKS_ABOVE_LINKS;
 }
 
 /** Whether hover should highlight first-hop neighbors at this node count. */
