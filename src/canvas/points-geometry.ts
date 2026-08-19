@@ -116,9 +116,8 @@ export function packedNodeSize(node: RenderNode): number {
  * Pack render data into buffers.
  *
  * Links whose endpoints are not both present are dropped: `buildGraphData`
- * already filters nodes by kind and by the progressive reveal cap, so a link
- * can outlive one of its endpoints. Keeping it would index past the node
- * buffer and draw a line to the origin.
+ * already filters nodes by kind, so a link can outlive one of its endpoints.
+ * Keeping it would index past the node buffer and draw a line to the origin.
  */
 export function packGraph(data: RenderGraphData): PackedGraph {
   const { nodes, links } = data;

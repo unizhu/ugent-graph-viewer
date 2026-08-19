@@ -13,13 +13,10 @@
     "d3-force-3d": "3.0.6",
     "graphology": "0.26.0",
     "graphology-communities-louvain": "^2.0.2",
-    "graphology-layout-forceatlas2": "0.10.1",
-    "graphology-layout-noverlap": "^0.4.2",
     "graphology-types": "0.24.8",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "react-force-graph-2d": "1.29.1",
-    "react-force-graph-3d": "^1.29.1",
     "three": "^0.184.0"
   },
   "devDependencies": {

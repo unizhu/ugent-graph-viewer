@@ -177,25 +177,17 @@ export function GraphCanvas({
     [graph, hoveredNode, filters.aggregateMode, isMemory, graphData, highlightOnHover],
   );
 
-  // Click flies the camera to the node (3D uses cameraPosition; 2D centers).
+  // Click centres the 2D canvas on the node. Only ForceGraph2D receives this;
+  // the 3D path handles its own click-to-fly inside PointsScene, which owns
+  // that camera.
   const handleNodeClick = useCallback(
     (node: any) => {
       if (!node) return;
-      if (mode === "3d") {
-        const distance = 80;
-        const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-        fgRef.current?.cameraPosition(
-          { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
-          node,
-          1500,
-        );
-      } else {
-        fgRef.current?.centerAt(node.x || 0, node.y || 0, 1000);
-        fgRef.current?.zoom(4, 1000);
-      }
+      fgRef.current?.centerAt(node.x || 0, node.y || 0, 1000);
+      fgRef.current?.zoom(4, 1000);
       onNodeClick(node.id);
     },
-    [onNodeClick, mode],
+    [onNodeClick],
   );
 
   // Deep-link / handoff focus (R13) for the 2D canvas: fly to the node once

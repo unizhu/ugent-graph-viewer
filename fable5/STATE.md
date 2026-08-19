@@ -7,18 +7,16 @@ and B. Plan: Phase A cheap wins + instrumentation, gate on measured draw calls,
 Phase B single-draw-call renderer, Phase C appearance.
 
 ## Now
-Phase A complete and verified locally (tests + build). Awaiting the deployed
-measurement that decides Phase B.
+All three phases shipped and deployed, each verified in headless Chromium
+(Playwright is available via ../ugent-tenant-console).
 
 ## Next
-1. Deploy Phase A; enable "Render stats" in the sidebar.
-2. Record draw calls / triangles / fps on ugent-7559fca657ae (26k raw, ~10k
-   rendered), comet-d023d9211ed3 (13.8k) and ugent-tenant-console (2k).
-3. Gate: GPU/draw-call bound -> Phase B. Comfortable already -> skip to Phase C
-   against the existing mesh renderer.
-4. Phase B (if gated in): layout worker -> Points/LineSegments scene -> GPU
-   picking -> attribute-based highlight -> parity -> swap out ForceGraph3D.
-5. Phase C: sphere-impostor shader, per-kind glyph atlas.
+Nothing outstanding. Possible follow-ups, none blocking:
+1. LARGE_GRAPH_PROMPT_THRESHOLD (5000) was set when 3D was expensive; it is now
+   a legibility prompt, not a performance one, so the number and wording could
+   be revisited.
+2. graphology-types is declared but never imported; left alone because removing
+   a types package is a different risk class from removing a runtime one.
 
 ## Constraints
 - 2D path (react-force-graph-2d) untouched.
@@ -46,8 +44,9 @@ measurement that decides Phase B.
   link, so ~30k draw calls at 10k nodes. Verified in the shipped bundle.
 - Library defaults: nodeResolution 8, linkResolution 6, nodeOpacity 0.75,
   linkOpacity 0.2. antialias already true in three-render-objects.
-- Versions are current: react-force-graph-3d 1.29.1 and three-forcegraph 1.43.4
-  are latest; three 0.184.0 vs 0.185.1. No perf win available from upgrading.
+- react-force-graph-3d/three-forcegraph are gone: the 3D path is our own
+  three.js scene. Dropping that dependency took the bundle from 1,787kB to
+  1,087kB (gzip 486 -> 296). react-force-graph-2d still serves the 2D path.
 - Workspace sizes (raw, from the engine): ugent 26,107 | reelchair 22,580 |
   comet 13,831 | ugent-context-engine 12,988 | 8 of 12 under 9k. HTTP export
   prunes block nodes (~60% off), so rendered counts are far lower.
@@ -56,10 +55,25 @@ measurement that decides Phase B.
   src/graph/clustering.ts:66.
 
 ## Done
-- Phase A: quality tiers + predicates (render-settings.ts) with 16 tests; flat
-  links above 4000; hover highlight off above 6000 nodes; powerPreference
-  high-performance; large-graph prompt threshold 8000 -> 5000 with file
-  aggregation marked Recommended; render stats overlay + persisted toggle.
+- Phase A: quality tiers in render-settings.ts; large-graph prompt threshold
+  8000 -> 5000 with file aggregation marked Recommended; render stats overlay
+  + persisted toggle. The flat-link and sphere-resolution tiers were deleted
+  again in Phase B once the mesh renderer they served was gone.
+- Phase B: PointsCanvas/PointsScene replace react-force-graph-3d. ~30k draw
+  calls -> 2, verified at 10k nodes / 16.7k links, 120 fps headless and 60 fps
+  on the real 26k workspace. Layout runs in a worker; picking is a GPU readback.
+- Phase C: sphere-impostor shader and SDF per-kind silhouettes, both in the
+  fragment shader, still one draw call. Persisted "Node shapes" toggle.
+- Post-ship fixes, each reproduced in a browser before and after: canvas CSS
+  sizing (setSize updateStyle=false rendered the graph off-screen at 2x); node
+  size calibration (sub-pixel nodes); pick window 1x1 -> 13x13 (tooltip hits
+  1/15 -> 14/15 at 2x); hover highlight no longer gated at 6000 nodes in 3D.
+- Removed progressive reveal entirely: it rebuilt graphData with fresh node
+  objects each step, so both canvases restarted their layout. 2D blocking
+  12 long tasks / 8,092ms -> 1 / 1,112ms on a 7,400-node export.
+- Removed three now-unused dependencies (react-force-graph-3d,
+  graphology-layout-forceatlas2, graphology-layout-noverlap) and the dead 3D
+  branch in GraphCanvas.handleNodeClick.
 
 ## Open items
 - The product question in the plan: aggregation-by-default above ~5k with

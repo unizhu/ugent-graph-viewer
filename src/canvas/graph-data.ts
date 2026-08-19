@@ -224,7 +224,7 @@ export function nodeSize(degree: number): number {
 //
 // buildMemoryGraphData produces the same RenderGraphData shape as the code
 // builders, so GraphCanvas (2D/3D), hover highlighting, camera fly-to, and
-// progressive loading are reused unchanged. The differences are carried on the
+// filtering are reused unchanged. The differences are carried on the
 // render nodes/links (memoryKind, record, memberCount, memoryEdgeKind) and read
 // by the canvas's memory-aware size/tooltip/color accessors.
 // ---------------------------------------------------------------------------

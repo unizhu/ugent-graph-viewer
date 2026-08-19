@@ -1,13 +1,10 @@
 /**
  * Tests for the render quality tiers.
  *
- * These predicates decide how much geometry and per-frame work a large graph
- * pays for. The one that matters most is `cylinderLinksFor`: three-forcegraph
- * selects its link object with `useCylinder = !!widthAccessor(link)`, so a
- * caller that returns any non-zero width -- including a small "dimmed" width --
- * keeps every link as a lit cylinder mesh. The boundary cases below are the
- * ones that regress silently, because a wrong threshold still renders
- * correctly and only shows up as frame rate.
+ * Both surviving tiers apply to the 2D canvas: the 3D path draws the whole
+ * graph in two calls and highlights in O(degree), so it sheds nothing. The
+ * boundary cases below are the ones that regress silently, because a wrong
+ * threshold still renders correctly and only shows up as frame rate.
  *
  * Same convention as `../graph/memory-loader.test.ts`: standalone tsx script,
  * throws on failure.

@@ -73,9 +73,11 @@ run standalone it falls back to a dark theme.
 - **Node kind / edge relation filters**, name/path **search**, and
   **community clustering** (Louvain).
 - **Node inspector** — kind, id, file, line range, codebase, community.
-- **Progressive loading** — graphs above a node-count threshold reveal in
-  batches (highest-degree first) with a live node-count notice, so large
-  tenant graphs stay responsive. Constants live in `src/ui/App.tsx`.
+- **Large-graph chooser** — above a node-count threshold, pick how to open a
+  workspace: aggregated to file level (recommended), full graph in 2D, or full
+  graph in 3D. Threshold lives in `src/ui/App.tsx`.
+- **Per-kind node silhouettes** and a draw-call/FPS overlay, both toggleable
+  in the sidebar and persisted.
 - **Deep-linking** via `?node=<id>` and via the handoff focus node.
 
 ## Memory graph view
@@ -109,8 +111,9 @@ and sessions) and is wired into the quick-load manifest.
 
 | Library | Purpose |
 |---------|---------|
-| react-force-graph-3d + three | 3D WebGL graph renderer |
-| Graphology (+ louvain, forceatlas2, noverlap) | Graph structure, communities, layout |
+| three + d3-force-3d | 3D renderer: one Points and one LineSegments for the whole graph, layout in a worker |
+| react-force-graph-2d | 2D canvas renderer |
+| Graphology (+ louvain) | Graph structure and communities |
 | React | UI framework |
 | Vite | Build tool |
 | Tailwind CSS | Styling |
@@ -126,7 +129,7 @@ Engine export (graph_export)  ──▶  ExportViewport JSON
                             Graphology graph instance
                                         │
                                         ▼
-                     react-force-graph-3d (three.js) canvas
+               PointsCanvas (three.js, 2 draw calls) / ForceGraph2D
 ```
 
 The viewer is a client-side app. Graph data arrives either from the console

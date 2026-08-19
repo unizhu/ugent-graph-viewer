@@ -87,9 +87,8 @@ function data(nodes: RenderNode[], links: RenderLink[]): RenderGraphData {
 
 // --- dangling links are dropped ---
 {
-  // buildGraphData filters nodes by kind and by the progressive reveal cap, so
-  // a link routinely outlives one of its endpoints. Keeping it would index
-  // past the node buffer.
+  // buildGraphData filters nodes by kind, so a link routinely outlives one of
+  // its endpoints. Keeping it would index past the node buffer.
   const packed = packGraph(
     data(
       [node("a"), node("b")],
