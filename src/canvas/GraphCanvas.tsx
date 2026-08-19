@@ -32,8 +32,6 @@ interface GraphCanvasProps {
   focusNodeId?: string | null;
   /** Called after a focus request has been handled so it fires only once. */
   onFocusHandled?: () => void;
-  /** Progressive loading cap (R18); undefined/Infinity renders everything. */
-  revealLimit?: number;
   /** 2D or 3D render mode (R1). */
   mode: RenderMode;
   /** Auto-orbit toggle + interval (R2). Orbit is 3D-only. */
@@ -56,7 +54,6 @@ export function GraphCanvas({
   selectedNodeId,
   focusNodeId,
   onFocusHandled,
-  revealLimit,
   mode,
   orbit,
   showStats = false,
@@ -88,19 +85,22 @@ export function GraphCanvas({
   // Orbit and its interaction pause moved into PointsScene, which owns the 3D
   // camera. The 2D canvas never orbited, so nothing here tracks interaction.
 
-  // Build render nodes/links from the graphology graph, capped for progressive
-  // loading. Shared by both render modes (see graph-data.ts). Memo keys on the
-  // primitive filter values (not the filters object identity) so a new object
-  // reference alone doesn't force a rebuild + re-layout; only real changes do.
+  // Build render nodes/links from the graphology graph. Shared by both render
+  // modes (see graph-data.ts). Memo keys on the primitive filter values (not
+  // the filters object identity) so a new object reference alone doesn't force
+  // a rebuild + re-layout; only real changes do.
+  //
+  // That stability is the whole point: every rebuild allocates fresh node
+  // objects, and both canvases treat new objects as a new graph and restart
+  // their layout from scratch.
   const graphData = useMemo(
     () =>
       isMemory && memoryFilters
         ? buildMemoryGraphData(graph, memoryFilters)
-        : buildGraphData(graph, filters, revealLimit),
+        : buildGraphData(graph, filters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       graph,
-      revealLimit,
       isMemory,
       // Code filters:
       filters.aggregateMode,

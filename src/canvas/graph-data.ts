@@ -82,26 +82,6 @@ function shouldHideNode(
   return false;
 }
 
-/**
- * Cap a built {nodes, links} set to the top-`limit` nodes by degree,
- * dropping links whose endpoints fall outside the kept set. Used for
- * progressive loading (R18): the highest-degree nodes are the structural
- * backbone, so revealing them first keeps early frames meaningful.
- */
-export function capByDegree(data: RenderGraphData, limit: number): RenderGraphData {
-  if (!Number.isFinite(limit) || data.nodes.length <= limit) return data;
-  const kept = [...data.nodes]
-    .sort((a, b) => (b.degree || 0) - (a.degree || 0))
-    .slice(0, limit);
-  const keptIds = new Set(kept.map((n) => n.id));
-  const links = data.links.filter((l) => {
-    const src = typeof l.source === "object" ? (l.source as { id: string }).id : l.source;
-    const tgt = typeof l.target === "object" ? (l.target as { id: string }).id : l.target;
-    return keptIds.has(src) && keptIds.has(tgt);
-  });
-  return { nodes: kept, links };
-}
-
 /** Build node and link arrays at the symbol level (default mode). */
 export function buildSymbolGraphData(graph: Graph, filters: FilterState): RenderGraphData {
   const nodes: RenderNode[] = [];
@@ -227,17 +207,11 @@ export function buildAggregatedGraphData(graph: Graph, filters: FilterState): Re
   return { nodes: Array.from(fileNodes.values()), links };
 }
 
-/** Build the render graph data for the current filters, applying a reveal cap. */
-export function buildGraphData(
-  graph: Graph,
-  filters: FilterState,
-  revealLimit?: number,
-): RenderGraphData {
-  const full = filters.aggregateMode
+/** Build the render graph data for the current filters. */
+export function buildGraphData(graph: Graph, filters: FilterState): RenderGraphData {
+  return filters.aggregateMode
     ? buildAggregatedGraphData(graph, filters)
     : buildSymbolGraphData(graph, filters);
-  if (revealLimit === undefined || !Number.isFinite(revealLimit)) return full;
-  return capByDegree(full, revealLimit);
 }
 
 /** Node draw radius/volume from its degree (shared by both render modes). */

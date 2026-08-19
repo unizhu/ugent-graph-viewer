@@ -56,23 +56,23 @@ import {
   saveNodeShapes,
 } from "../canvas/render-settings";
 
-// Progressive loading (R18), 2D only.
+// Progressive loading (R18) is gone. It revealed a large graph in batches by
+// raising a node cap on a timer, which sounded like it kept the UI responsive
+// and measurably did the opposite.
 //
-// Graphs with more than PROGRESSIVE_THRESHOLD nodes are revealed in batches so
-// the first frame is fast and the UI stays responsive: the canvas seeds with
-// PROGRESSIVE_INITIAL_BATCH highest-degree nodes, then adds
-// PROGRESSIVE_BATCH_STEP more every PROGRESSIVE_INTERVAL_MS until the whole
-// graph is shown. Tunable constants.
+// Each step rebuilt graphData with freshly allocated node objects, and both
+// canvases treat that as a new graph: force-graph resets its simulation to
+// alpha(1) and runs 60 warmup ticks on the main thread, and the 3D path
+// repacked its buffers and restarted the layout worker. So the layout never
+// converged -- it restarted about ten times and the graph visibly rearranged
+// itself -- and the comment claiming the ramp preserved node positions was
+// never true, because the objects carrying those positions were replaced.
 //
-// The 3D path opts out. It draws the whole graph in two draw calls, so it has
-// nothing to gain — and every step changes `revealLimit`, which rebuilds
-// graphData, which repacks the buffers and restarts the force layout in a new
-// worker. On a large workspace that restart storm cost far more than the ramp
-// ever saved, and it is what made a big graph take seconds to settle.
-const PROGRESSIVE_THRESHOLD = 1500;
-const PROGRESSIVE_INITIAL_BATCH = 800;
-const PROGRESSIVE_BATCH_STEP = 600;
-const PROGRESSIVE_INTERVAL_MS = 350;
+// Measured on a 7,400-node export in 2D, counting long tasks: 12 totalling
+// 8,092ms with the ramp, 1 totalling 1,187ms without. The 3D path draws the
+// whole graph in two calls and never needed it. What actually makes a graph
+// this size pleasant is file aggregation, which the large-graph prompt
+// recommends.
 
 // Above this node count, prompt the user to choose how to open the graph
 // (File View / 2D full / 3D full) before rendering, so a huge export doesn't
@@ -170,12 +170,6 @@ export function App() {
   useEffect(() => saveShowStats(showStats), [showStats]);
   useEffect(() => saveNodeShapes(nodeShapes), [nodeShapes]);
 
-  // `loadViewport` needs the current render mode but must keep a stable
-  // identity: it feeds `beginLoad`, which the console-handoff effect depends
-  // on, and re-creating that effect tears down and re-runs the handshake.
-  const renderModeRef = useRef(renderMode);
-  renderModeRef.current = renderMode;
-
   // View mode (code/memory), persisted (R3). Both datasets may stay loaded in
   // memory; toggling swaps which one drives the canvas + panels, no reload.
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadViewMode());
@@ -206,11 +200,6 @@ export function App() {
   // viewport arrives, after which the normal explorer renders.
   const [handoffState, setHandoffState] = useState<HandoffState | null>(null);
   const [focusNode, setFocusNode] = useState<string | null>(null);
-
-  // Progressive reveal cap (R18). undefined = render everything (small
-  // graphs). A finite value is ramped up by the effect below for large ones.
-  const [revealLimit, setRevealLimit] = useState<number | undefined>(undefined);
-  const [totalNodeCount, setTotalNodeCount] = useState(0);
 
   // Debounce search query to avoid excessive reducer recomputation.
   const debouncedSearchQuery = useDebounce(filters.searchQuery, 150);
@@ -280,17 +269,6 @@ export function App() {
       const infos = buildCommunityInfo(g, communityColors);
       setCommunities(infos);
 
-      // Progressive loading (R18): for large graphs in 2D, seed the canvas
-      // with an initial batch and let the ramp effect grow it. Small graphs,
-      // and every graph in 3D, render in full immediately.
-      const nodeCount = g.order;
-      const willRender3d =
-        choice === "threed" || (choice !== "twod" && renderModeRef.current === "3d");
-      setTotalNodeCount(nodeCount);
-      setRevealLimit(
-        !willRender3d && nodeCount > PROGRESSIVE_THRESHOLD ? PROGRESSIVE_INITIAL_BATCH : undefined,
-      );
-
       setGraph(g);
       setLoadingPhase("");
       setLayoutRunning(false);
@@ -316,30 +294,6 @@ export function App() {
     setLayoutRunning(true);
     loadViewport(viewport, choice);
   }, [pendingViewport, loadViewport]);
-
-  // Progressive reveal ramp (R18): once a finite revealLimit is set, grow it
-  // by PROGRESSIVE_BATCH_STEP on an interval until the whole graph is shown,
-  // then clear the cap. Chunked insertion happens in the canvas memo, which
-  // re-derives graphData from the new limit while keeping node positions.
-  // Switching into 3D drops any cap the 2D path had built up, so the graph is
-  // whole the moment the mode changes rather than resuming a ramp that the 3D
-  // renderer would only pay to restart.
-  useEffect(() => {
-    if (renderMode === "3d") setRevealLimit(undefined);
-  }, [renderMode]);
-
-  useEffect(() => {
-    if (renderMode === "3d") return;
-    if (revealLimit === undefined || revealLimit >= totalNodeCount) return;
-    const timer = window.setInterval(() => {
-      setRevealLimit((prev) => {
-        if (prev === undefined) return undefined;
-        const next = prev + PROGRESSIVE_BATCH_STEP;
-        return next >= totalNodeCount ? undefined : next; // undefined = full
-      });
-    }, PROGRESSIVE_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [revealLimit, totalNodeCount, renderMode]);
 
   // Deep link: ?node=<id> focuses a node once the graph loads (R13). The
   // console may also send a focus node inside the handoff payload; whichever
@@ -747,24 +701,6 @@ export function App() {
         </div>
       </div>
       <div className="flex-1 relative">
-        {viewMode !== "memory" && revealLimit !== undefined && totalNodeCount > PROGRESSIVE_THRESHOLD && (
-          <div
-            className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg flex items-center gap-2"
-            style={{
-              background: "var(--gv-surface-raised)",
-              color: "var(--gv-text-primary)",
-              border: "1px solid var(--gv-border)",
-            }}
-          >
-            <span
-              className="h-2 w-2 rounded-full animate-pulse"
-              style={{ background: "var(--gv-accent)" }}
-              aria-hidden="true"
-            />
-            Loading large graph — showing {Math.min(revealLimit, totalNodeCount).toLocaleString()} of{" "}
-            {totalNodeCount.toLocaleString()} nodes…
-          </div>
-        )}
         {viewMode === "memory" && memoryGraph ? (
           <GraphCanvas
             graph={memoryGraph}
@@ -787,7 +723,6 @@ export function App() {
             selectedNodeId={selectedNode}
             focusNodeId={focusNode}
             onFocusHandled={() => setFocusNode(null)}
-            revealLimit={revealLimit}
             mode={renderMode}
             orbit={orbit}
             showStats={showStats}
