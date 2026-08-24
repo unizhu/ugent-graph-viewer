@@ -9,6 +9,21 @@ serving static files over TLS on its **own subdomain**.
 Runs alongside the console (a separate repo) which is served on a different
 subdomain. Keep them on distinct origins - the handshake and CORS require it.
 
+### Pinning the console origin (optional, recommended)
+
+The handshake is accepted only from the window that opened this tab, which
+is what stops an unrelated page driving it. If you know your console's
+origin, pin it as well and the viewer will refuse a handoff from anywhere
+else:
+
+```bash
+VITE_CONSOLE_ORIGINS=https://console.example.com npm run build
+```
+
+Comma-separate several. Leaving it unset keeps the zero-config behaviour
+described above. This is a build-time value, so a rebuild is needed to
+change it.
+
 ## Layout
 
 | Path | Owner / mode | What |

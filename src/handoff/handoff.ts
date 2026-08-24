@@ -102,6 +102,45 @@ export function isSessionGoneCode(code: string | null): boolean {
   return code === null || SESSION_GONE_CODES.has(code);
 }
 
+// Optional build-time allowlist of console origins, comma-separated in
+// `VITE_CONSOLE_ORIGINS`.
+//
+// Empty by default, because the viewer is deliberately runtime-config-free
+// and learns the console's origin from the handshake (deploy/README.md).
+// That design is why the origin check below cannot be an allowlist on its
+// own -- but an operator who knows their console's origin should be able
+// to say so, and a pinned build stops the handshake being offered to
+// anyone at all.
+// `import.meta.env` is a Vite build-time substitution and is absent when
+// these modules are imported directly by the tsx test runner, so this is
+// read defensively rather than assumed.
+const ALLOWED_CONSOLE_ORIGINS: string[] = (import.meta.env?.VITE_CONSOLE_ORIGINS ?? "")
+  .split(",")
+  .map((origin: string) => origin.trim())
+  .filter((origin: string) => origin.length > 0);
+
+function isAllowedConsoleOrigin(origin: string): boolean {
+  return ALLOWED_CONSOLE_ORIGINS.length === 0 || ALLOWED_CONSOLE_ORIGINS.includes(origin);
+}
+
+/**
+ * Whether `event` came from the window that opened this tab.
+ *
+ * `event.source` is the sending window itself and cannot be forged from
+ * the message body, unlike `consoleOrigin`. Cross-origin `window` handles
+ * compare by identity, so this works without reading anything off the
+ * opener -- which COOP may forbid.
+ */
+function isOpenerMessage(event: MessageEvent): boolean {
+  try {
+    return !!window.opener && event.source === window.opener;
+  } catch {
+    // An inaccessible opener cannot be compared; treat it as not matching
+    // rather than assuming it does.
+    return false;
+  }
+}
+
 function isHandoffMessage(data: unknown): data is HandoffMessage {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
@@ -246,9 +285,16 @@ export function createHandoff(onState: (state: HandoffState) => void): HandoffCo
 
   function onMessage(event: MessageEvent) {
     if (!isHandoffMessage(event.data)) return;
-    // Defense: the origin the message actually came from must match the
-    // consoleOrigin it claims, and we bind all later calls to that origin.
+    // The claimed origin must match the one the message actually came
+    // from. Necessary, but on its own it proves nothing: a sender picks
+    // both halves, so any origin satisfies it by declaring itself.
     if (event.data.consoleOrigin !== event.origin) return;
+    // The handshake is a reply to the `ready` we posted to our opener, so
+    // anything from another window is not part of it. This is what stops
+    // an arbitrary page from driving the handoff.
+    if (!isOpenerMessage(event)) return;
+    // A build may additionally pin the consoles it will talk to.
+    if (!isAllowedConsoleOrigin(event.origin)) return;
     if (settled) return; // already have a viewport; ignore duplicates
 
     consoleOrigin = event.origin;

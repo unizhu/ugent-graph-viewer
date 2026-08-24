@@ -100,7 +100,61 @@ export function subscribeTheme(listener: ThemeListener): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Narrow-validate an untrusted `theme` field from a postMessage payload. */
+// A CSS colour we are willing to accept from a postMessage payload.
+//
+// Deliberately narrow: hex, rgb()/rgba(), hsl()/hsla(), and the plain
+// keyword forms. Anything else -- a url(), a var(), a string carrying
+// quotes or angle brackets -- is not a colour we need to support and is
+// exactly what an injected value looks like.
+//
+// This matters beyond CSS. Token values are interpolated into the tooltip
+// markup in `canvas/GraphCanvas.tsx`, which is assigned with
+// `dangerouslySetInnerHTML`, so a token was a script-execution vector in
+// the viewer's own origin, not just a way to make the chrome ugly.
+const COLOR_PATTERN =
+  /^(#[0-9a-f]{3,8}|(rgb|hsl)a?\([0-9a-z.,%/\s+-]*\)|[a-z]{3,20})$/i;
+
+function isColorValue(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 64 && COLOR_PATTERN.test(value.trim());
+}
+
+/**
+ * Keep only the entries of `value` whose values are colours we accept.
+ *
+ * Dropping a bad entry rather than rejecting the whole payload keeps a
+ * console that adds a token ahead of the viewer working, which is the
+ * reason the merge onto a fallback exists in the first place.
+ */
+function colorEntriesOf(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (isColorValue(raw)) out[key] = raw.trim();
+  }
+  return out;
+}
+
+/**
+ * A colour safe to interpolate into markup, or a neutral fallback.
+ *
+ * `applyTheme` already filters what it stores, so this is the second
+ * line rather than the first. It exists because the tooltip builders in
+ * `canvas/GraphCanvas.tsx` interpolate colours into an HTML string that
+ * `react-force-graph` and `PointsCanvas` inject as raw HTML -- the
+ * library takes a string, so there is no JSX form to fall back on. Any
+ * colour reaching markup goes through here, including node colours that
+ * come from graph data rather than the theme.
+ */
+export function safeColor(value: unknown): string {
+  return isColorValue(value) ? value.trim() : "transparent";
+}
+
+/**
+ * Narrow-validate an untrusted `theme` field from a postMessage payload.
+ *
+ * Shape only. `applyTheme` is what filters the individual token values,
+ * because a payload with one bad token is still worth applying.
+ */
 export function isThemePayload(value: unknown): value is GraphThemePayload {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -121,8 +175,11 @@ export function applyTheme(payload: GraphThemePayload): void {
   // Merge onto the matching fallback so a partial payload never leaves a
   // token undefined (which would blank a surface).
   const base = payload.theme === "light" ? { ...FALLBACK_DARK.tokens, ...FALLBACK_LIGHT_TOKENS } : FALLBACK_DARK.tokens;
-  const tokens: GraphThemeTokens = { ...base, ...payload.tokens };
-  const kinds: GraphKindPalette = { ...FALLBACK_DARK.kinds, ...payload.kinds };
+  // Only colour-shaped values are merged in; anything else falls back.
+  // The payload arrives by postMessage from a window we do not control,
+  // and these values reach both CSS variables and tooltip markup.
+  const tokens: GraphThemeTokens = { ...base, ...colorEntriesOf(payload.tokens) };
+  const kinds: GraphKindPalette = { ...FALLBACK_DARK.kinds, ...colorEntriesOf(payload.kinds) };
   current = { theme: payload.theme, tokens, kinds };
 
   const root = document.documentElement;

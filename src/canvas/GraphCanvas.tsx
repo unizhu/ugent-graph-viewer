@@ -2,7 +2,7 @@ import { useRef, useMemo, useState, useEffect, useCallback } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import Graph from "graphology";
 import type { FilterState, MemoryFilterState, ViewMode } from "../types";
-import { currentTheme } from "../theme/theme";
+import { currentTheme, safeColor } from "../theme/theme";
 import {
   buildGraphData,
   buildMemoryGraphData,
@@ -230,8 +230,8 @@ export function GraphCanvas({
   const theme = currentTheme();
   const canvasBg =
     theme.theme === "light"
-      ? `radial-gradient(circle, ${theme.tokens.surface} 0%, ${theme.tokens.background} 100%)`
-      : `radial-gradient(circle, ${theme.tokens.surfaceRaised} 0%, ${theme.tokens.background} 100%)`;
+      ? `radial-gradient(circle, ${safeColor(theme.tokens.surface)} 0%, ${safeColor(theme.tokens.background)} 100%)`
+      : `radial-gradient(circle, ${safeColor(theme.tokens.surfaceRaised)} 0%, ${safeColor(theme.tokens.background)} 100%)`;
 
   // Shared accessors so both modes color/size identically.
   const nodeColor = useCallback(
@@ -270,8 +270,8 @@ export function GraphCanvas({
       if (node.memoryKind) return memoryNodeTooltip(node, theme);
       return `
       <div style="
-        background: ${theme.tokens.surfaceRaised};
-        border: 1px solid ${theme.tokens.border};
+        background: ${safeColor(theme.tokens.surfaceRaised)};
+        border: 1px solid ${safeColor(theme.tokens.border)};
         border-radius: 8px;
         padding: 8px 12px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
@@ -280,16 +280,16 @@ export function GraphCanvas({
         min-width: 180px;
       ">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${node.color};"></span>
-          <span style="font-weight: 700; color: ${theme.tokens.textPrimary}; font-size: 13px;">${escapeHtml(node.label)}</span>
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${safeColor(node.color)};"></span>
+          <span style="font-weight: 700; color: ${safeColor(theme.tokens.textPrimary)}; font-size: 13px;">${escapeHtml(node.label)}</span>
         </div>
-        <div style="font-size: 11px; color: ${theme.tokens.textSecondary}; margin-bottom: 4px;">
-          <span style="color: ${theme.tokens.textSecondary}; font-weight: 500;">Kind:</span>
-          <span style="font-family: monospace; background: ${theme.tokens.surface}; padding: 1px 4px; border-radius: 4px; color: ${theme.tokens.accent};">${escapeHtml(node.kind)}</span>
+        <div style="font-size: 11px; color: ${safeColor(theme.tokens.textSecondary)}; margin-bottom: 4px;">
+          <span style="color: ${safeColor(theme.tokens.textSecondary)}; font-weight: 500;">Kind:</span>
+          <span style="font-family: monospace; background: ${safeColor(theme.tokens.surface)}; padding: 1px 4px; border-radius: 4px; color: ${safeColor(theme.tokens.accent)};">${escapeHtml(node.kind)}</span>
         </div>
         ${
           node.filePath
-            ? `<div style="font-size: 10px; color: ${theme.tokens.textSecondary}; font-family: monospace; word-break: break-all; border-top: 1px solid ${theme.tokens.border}; padding-top: 4px; margin-top: 4px;">${escapeHtml(node.filePath)}</div>`
+            ? `<div style="font-size: 10px; color: ${safeColor(theme.tokens.textSecondary)}; font-family: monospace; word-break: break-all; border-top: 1px solid ${safeColor(theme.tokens.border)}; padding-top: 4px; margin-top: 4px;">${escapeHtml(node.filePath)}</div>`
             : ""
         }
       </div>
@@ -374,8 +374,8 @@ function memoryNodeTooltip(
 ): string {
   const shell = (inner: string) => `
     <div style="
-      background: ${theme.tokens.surfaceRaised};
-      border: 1px solid ${theme.tokens.border};
+      background: ${safeColor(theme.tokens.surfaceRaised)};
+      border: 1px solid ${safeColor(theme.tokens.border)};
       border-radius: 8px;
       padding: 8px 12px;
       box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5);
@@ -386,14 +386,14 @@ function memoryNodeTooltip(
 
   const header = (title: string) => `
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${node.color};"></span>
-      <span style="font-weight:700; color:${theme.tokens.textPrimary}; font-size:13px;">${title}</span>
+      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${safeColor(node.color)};"></span>
+      <span style="font-weight:700; color:${safeColor(theme.tokens.textPrimary)}; font-size:13px;">${title}</span>
     </div>`;
 
   const chip = (label: string, value: string) => `
-    <div style="font-size:11px; color:${theme.tokens.textSecondary}; margin-bottom:3px;">
+    <div style="font-size:11px; color:${safeColor(theme.tokens.textSecondary)}; margin-bottom:3px;">
       <span style="font-weight:500;">${label}:</span>
-      <span style="font-family:monospace; background:${theme.tokens.surface}; padding:1px 4px; border-radius:4px; color:${theme.tokens.accent};">${value}</span>
+      <span style="font-family:monospace; background:${safeColor(theme.tokens.surface)}; padding:1px 4px; border-radius:4px; color:${safeColor(theme.tokens.accent)};">${value}</span>
     </div>`;
 
   if (node.memoryKind && node.memoryKind !== "record") {
@@ -409,7 +409,7 @@ function memoryNodeTooltip(
   const preview = content.length > 200 ? `${content.slice(0, 197)}...` : content;
   const parts = [header("Memory record")];
   parts.push(`
-    <div style="font-size:12px; color:${theme.tokens.textPrimary}; line-height:1.4; margin-bottom:6px; border-top:1px solid ${theme.tokens.border}; padding-top:6px;">${preview}</div>`);
+    <div style="font-size:12px; color:${safeColor(theme.tokens.textPrimary)}; line-height:1.4; margin-bottom:6px; border-top:1px solid ${safeColor(theme.tokens.border)}; padding-top:6px;">${preview}</div>`);
   if (record?.kind) parts.push(chip("Kind", escapeHtml(record.kind)));
   if (record?.tier) parts.push(chip("Tier", escapeHtml(record.tier)));
   if (record?.category) parts.push(chip("Category", escapeHtml(record.category)));
